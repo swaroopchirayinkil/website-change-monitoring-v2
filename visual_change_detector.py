@@ -21,11 +21,15 @@ import hashlib
 import http.server
 import json
 import os
+import re
+import shutil
 import socketserver
 import sys
 import threading
 import time
+import urllib.request
 import webbrowser
+from datetime import datetime, date, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from PIL import Image, ImageChops, ImageEnhance
@@ -36,10 +40,136 @@ BASELINES_DIR = CACHE_DIR / "baselines"
 LATEST_DIR = CACHE_DIR / "latest"
 DIFFS_DIR = CACHE_DIR / "diffs"
 REPORT_FILE = CACHE_DIR / "report.html"
+INTEGRATIONS_FILE = CACHE_DIR / "integrations.json"
+SCHEDULE_FILE = CACHE_DIR / "schedule.json"
 
 _thread_local = threading.local()
 _thread_browsers = []
 _thread_browsers_lock = threading.Lock()
+
+def get_baseline_timestamp_display(baseline_path: Path) -> str:
+    """Return formatted timestamp string of baseline modification time."""
+    if baseline_path.exists():
+        try:
+            mtime = baseline_path.stat().st_mtime
+            dt = datetime.fromtimestamp(mtime)
+            return dt.strftime("%d-%b-%Y %I:%M %p")
+        except Exception:
+            return "Baseline available"
+    return "Baseline not created"
+
+def cleanup_old_reports(max_days: int = 5):
+    """Retain only the last 5 calendar days of reports, automatically deleting older reports."""
+    if not CACHE_DIR.exists():
+        return
+    today = date.today()
+    cutoff_date = today - timedelta(days=max_days)
+    pattern = re.compile(r"^report_(\d{4}-\d{2}-\d{2})\.html$")
+
+    for f in CACHE_DIR.glob("report_*.html"):
+        match = pattern.match(f.name)
+        if match:
+            date_str = match.group(1)
+            try:
+                file_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                if file_date < cutoff_date:
+                    f.unlink(missing_ok=True)
+            except ValueError:
+                pass
+
+def load_integrations() -> dict:
+    """Load third-party integration settings (n8n)."""
+    default_cfg = {
+        "n8n_enabled": False,
+        "n8n_webhook_url": "",
+        "n8n_trigger_condition": "on_change",
+        "n8n_auth_header": "",
+    }
+    if INTEGRATIONS_FILE.exists():
+        try:
+            with open(INTEGRATIONS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                default_cfg.update(data)
+        except Exception:
+            pass
+    return default_cfg
+
+def save_integrations(data: dict) -> bool:
+    """Save third-party integration settings (n8n)."""
+    try:
+        cfg = load_integrations()
+        cfg.update(data)
+        with open(INTEGRATIONS_FILE, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2)
+        return True
+    except Exception:
+        return False
+
+def load_schedule() -> dict:
+    """Load cron/scan schedule settings."""
+    default_cfg = {
+        "cron_expression": "0 5 * * *",
+        "preset": "daily_5am",
+        "enabled": False,
+    }
+    if SCHEDULE_FILE.exists():
+        try:
+            with open(SCHEDULE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                default_cfg.update(data)
+        except Exception:
+            pass
+    return default_cfg
+
+def save_schedule(data: dict) -> bool:
+    """Save cron/scan schedule settings."""
+    try:
+        cfg = load_schedule()
+        cfg.update(data)
+        with open(SCHEDULE_FILE, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2)
+        return True
+    except Exception:
+        return False
+
+def dispatch_n8n_webhook(scan_results: list[dict], action: str = "check"):
+    """Asynchronously dispatch scan execution payload to n8n webhook if configured."""
+    cfg = load_integrations()
+    if not cfg.get("n8n_enabled") or not cfg.get("n8n_webhook_url"):
+        return
+
+    changed_items = [r for r in scan_results if r.get("status") == "Changed"]
+    condition = cfg.get("n8n_trigger_condition", "on_change")
+    if condition == "on_change" and not changed_items:
+        return
+
+    payload = {
+        "event": "scan_completed",
+        "action": action,
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "total_urls": len(scan_results),
+        "changed_urls": len(changed_items),
+        "unchanged_urls": len([r for r in scan_results if r.get("status") == "Unchanged"]),
+        "failed_urls": len([r for r in scan_results if r.get("status") == "Failed"]),
+        "changed_items": [{"url": r["url"], "percentage": r.get("percentage", 0)} for r in changed_items],
+        "report_url": "http://localhost:8000/report.html"
+    }
+
+    def _send():
+        try:
+            req = urllib.request.Request(
+                cfg["n8n_webhook_url"],
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"}
+            )
+            if cfg.get("n8n_auth_header"):
+                req.add_header("Authorization", cfg["n8n_auth_header"])
+            with urllib.request.urlopen(req, timeout=10):
+                pass
+        except Exception as e:
+            print(f"⚠️ Failed to send n8n webhook: {e}")
+
+    threading.Thread(target=_send, daemon=True).start()
 
 def get_thread_browser():
     """Retrieve or initialize a thread-local Playwright browser instance to maximize scanning throughput."""
@@ -300,14 +430,17 @@ def build_combined_report_results(scanned_results: dict = None) -> list[dict]:
 
     combined = []
     for url in all_urls:
-        if url in scanned_results:
-            combined.append(scanned_results[url])
-        else:
-            slug = url_to_slug(url)
-            baseline_path = BASELINES_DIR / f"{slug}.png"
-            latest_path = LATEST_DIR / f"{slug}.png"
-            diff_path = DIFFS_DIR / f"{slug}_diff.png"
+        slug = url_to_slug(url)
+        baseline_path = BASELINES_DIR / f"{slug}.png"
+        latest_path = LATEST_DIR / f"{slug}.png"
+        diff_path = DIFFS_DIR / f"{slug}_diff.png"
+        baseline_updated = get_baseline_timestamp_display(baseline_path)
 
+        if url in scanned_results:
+            res_item = dict(scanned_results[url])
+            res_item["baseline_last_updated"] = baseline_updated
+            combined.append(res_item)
+        else:
             if baseline_path.exists() and latest_path.exists() and diff_path.exists():
                 try:
                     diff_res = compute_visual_diff(
@@ -324,6 +457,7 @@ def build_combined_report_results(scanned_results: dict = None) -> list[dict]:
                         "baseline_rel": f"baselines/{slug}.png",
                         "latest_rel": f"latest/{slug}.png",
                         "diff_rel": f"diffs/{slug}_diff.png",
+                        "baseline_last_updated": baseline_updated,
                     })
                 except Exception as e:
                     combined.append({
@@ -331,7 +465,8 @@ def build_combined_report_results(scanned_results: dict = None) -> list[dict]:
                         "status": "Failed",
                         "percentage": 0,
                         "changed_pixels": 0,
-                        "error": str(e)
+                        "error": str(e),
+                        "baseline_last_updated": baseline_updated,
                     })
             elif baseline_path.exists():
                 combined.append({
@@ -342,6 +477,7 @@ def build_combined_report_results(scanned_results: dict = None) -> list[dict]:
                     "baseline_rel": f"baselines/{slug}.png",
                     "latest_rel": f"baselines/{slug}.png",
                     "diff_rel": f"baselines/{slug}.png",
+                    "baseline_last_updated": baseline_updated,
                 })
             else:
                 combined.append({
@@ -349,7 +485,8 @@ def build_combined_report_results(scanned_results: dict = None) -> list[dict]:
                     "status": "Failed",
                     "percentage": 0,
                     "changed_pixels": 0,
-                    "error": "No baseline screenshot captured yet."
+                    "error": "No baseline screenshot captured yet.",
+                    "baseline_last_updated": baseline_updated,
                 })
     return combined
 
@@ -515,6 +652,7 @@ class ScanManager:
 
                 combined = build_combined_report_results(results_by_url)
                 generate_html_report(combined)
+                dispatch_n8n_webhook(combined, action="update")
 
                 with self.lock:
                     self.status_message = "Baseline update completed."
@@ -601,6 +739,7 @@ class ScanManager:
 
                 combined = build_combined_report_results(results_by_url)
                 generate_html_report(combined)
+                dispatch_n8n_webhook(combined, action="check")
 
                 with self.lock:
                     self.status_message = "Live check completed."
@@ -637,6 +776,12 @@ class MonitoringRequestHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/api/status":
             self.send_json_response(scan_manager.get_state())
+        elif self.path == "/api/settings":
+            self.send_json_response({
+                "success": True,
+                "schedule": load_schedule(),
+                "integrations": load_integrations()
+            })
         elif self.path == "/" or self.path == "/index.html":
             self.path = "/report.html"
             super().do_GET()
@@ -644,19 +789,21 @@ class MonitoringRequestHandler(http.server.SimpleHTTPRequestHandler):
             super().do_GET()
 
     def do_POST(self):
-        if self.path == "/api/start-scan":
-            length = int(self.headers.get("Content-Length", 0))
-            raw = self.rfile.read(length).decode("utf-8") if length > 0 else "{}"
+        length = int(self.headers.get("Content-Length", 0))
+        raw = self.rfile.read(length).decode("utf-8") if length > 0 else "{}"
+        try:
             data = json.loads(raw)
+        except Exception:
+            data = {}
+
+        if self.path == "/api/start-scan":
             action = data.get("action", "check")
             speed = data.get("speed", "low")
             custom_urls = data.get("custom_urls", None)
             success, msg = scan_manager.start_scan(action=action, speed=speed, custom_urls=custom_urls, options=data)
             self.send_json_response({"success": success, "message": msg, "state": scan_manager.get_state()})
+
         elif self.path == "/api/add-domain":
-            length = int(self.headers.get("Content-Length", 0))
-            raw = self.rfile.read(length).decode("utf-8") if length > 0 else "{}"
-            data = json.loads(raw)
             urls = data.get("urls", [])
             target_file = Path(data.get("target_file", "domain.txt"))
             create_baseline = data.get("create_baseline", False)
@@ -675,10 +822,8 @@ class MonitoringRequestHandler(http.server.SimpleHTTPRequestHandler):
                 "duplicates": duplicates,
                 "total": len(load_urls_from_file(target_file))
             })
+
         elif self.path == "/api/remove-domain":
-            length = int(self.headers.get("Content-Length", 0))
-            raw = self.rfile.read(length).decode("utf-8") if length > 0 else "{}"
-            data = json.loads(raw)
             urls = data.get("urls", [])
             if "url" in data and data["url"]:
                 urls.append(data["url"])
@@ -693,6 +838,70 @@ class MonitoringRequestHandler(http.server.SimpleHTTPRequestHandler):
                 "removed": removed,
                 "total": len(load_urls_from_file(target_file))
             })
+
+        elif self.path == "/api/settings/schedule":
+            saved = save_schedule(data)
+            self.send_json_response({
+                "success": saved,
+                "message": "Schedule configuration saved successfully." if saved else "Failed to save schedule configuration."
+            })
+
+        elif self.path == "/api/settings/integrations":
+            saved = save_integrations(data)
+            self.send_json_response({
+                "success": saved,
+                "message": "Third-party integration settings saved successfully." if saved else "Failed to save integration settings."
+            })
+
+        elif self.path == "/api/settings/clear-cache":
+            try:
+                for item in LATEST_DIR.glob("*.png"):
+                    try: item.unlink()
+                    except Exception: pass
+                for item in DIFFS_DIR.glob("*.png"):
+                    try: item.unlink()
+                    except Exception: pass
+
+                combined = build_combined_report_results()
+                generate_html_report(combined)
+                self.send_json_response({
+                    "success": True,
+                    "message": "Snapshot cache (live captures & diff heatmaps) cleared successfully. Baseline snapshots preserved."
+                })
+            except Exception as e:
+                self.send_json_response({"success": False, "message": f"Error clearing cache: {e}"})
+
+        elif self.path == "/api/test-n8n":
+            cfg = load_integrations()
+            webhook_url = cfg.get("n8n_webhook_url", "").strip()
+            if not webhook_url:
+                self.send_json_response({"success": False, "message": "n8n Webhook URL is not configured. Please enter a valid URL in settings."})
+            else:
+                payload = {
+                    "event": "test_connection",
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "message": "Website Change Monitoring Suite - n8n Integration Connection Test Successful!"
+                }
+                try:
+                    req = urllib.request.Request(
+                        webhook_url,
+                        data=json.dumps(payload).encode("utf-8"),
+                        headers={"Content-Type": "application/json"}
+                    )
+                    if cfg.get("n8n_auth_header"):
+                        req.add_header("Authorization", cfg["n8n_auth_header"])
+                    with urllib.request.urlopen(req, timeout=8) as resp:
+                        status_code = resp.getcode()
+                    self.send_json_response({
+                        "success": True,
+                        "message": f"✅ Test webhook successfully sent to n8n (HTTP {status_code})!"
+                    })
+                except Exception as e:
+                    self.send_json_response({
+                        "success": False,
+                        "message": f"❌ Failed to deliver test webhook to n8n: {e}"
+                    })
+
         else:
             self.send_error(404, "Endpoint not found")
 
@@ -746,10 +955,12 @@ def run_server(host: str = "0.0.0.0", port: int = 8000, open_browser: bool = Tru
         cleanup_all_browsers()
 
 def generate_html_report(results: list[dict]) -> tuple[Path, Path]:
-    """Generate a modern interactive HTML report with baseline, live, diff viewers, summary table, column sorting, and status filtering."""
+    """Generate a modern interactive HTML report with baseline, live, diff viewers, summary table, settings drawer, and 5-day retention."""
+    cleanup_old_reports(max_days=5)
+
     results_json = json.dumps(results)
     timestamp_display = time.strftime('%Y-%m-%d %H:%M:%S')
-    timestamp_slug = time.strftime('%Y-%m-%d_%H-%M-%S')
+    today_date_slug = time.strftime('%Y-%m-%d')
     
     html_content = f"""<!DOCTYPE html>
 <html lang="en">
@@ -1407,8 +1618,17 @@ def generate_html_report(results: list[dict]) -> tuple[Path, Path]:
 </head>
 <body>
     <div class="header">
-        <h1>Visual Change Monitoring Dashboard</h1>
-        <p>Generated on {timestamp_display} | Saved as report_{timestamp_slug}.html</p>
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
+            <div>
+                <h1>Visual Change Monitoring Dashboard</h1>
+                <p>Generated on {timestamp_display} | Daily Retention Archive: report_{today_date_slug}.html (5-Day Retention)</p>
+            </div>
+            <div>
+                <button id="btn-settings-toggle" class="btn-settings-toggle" onclick="toggleSettingsDrawer()">
+                    <span>☰</span> Settings & Integrations
+                </button>
+            </div>
+        </div>
     </div>
 
     <!-- Executive Task Control Panel -->
@@ -1483,6 +1703,85 @@ def generate_html_report(results: list[dict]) -> tuple[Path, Path]:
 
     <div id="app"></div>
 
+    <!-- Application Settings & Integrations Slide-Over Drawer -->
+    <div id="drawerOverlay" class="drawer-overlay" onclick="toggleSettingsDrawer(false)"></div>
+    <div id="settingsDrawer" class="settings-drawer">
+        <div class="drawer-header">
+            <h3>⚙️ Settings & Integrations</h3>
+            <button class="drawer-close-btn" onclick="toggleSettingsDrawer(false)">✕</button>
+        </div>
+        <div class="drawer-tabs">
+            <button class="drawer-tab active" onclick="switchDrawerTab('schedule')">📅 Schedule</button>
+            <button class="drawer-tab" onclick="switchDrawerTab('cache')">🧹 Clear Cache</button>
+            <button class="drawer-tab" onclick="switchDrawerTab('integrations')">🔌 n8n Integration</button>
+        </div>
+        <div class="drawer-content">
+            <!-- Schedule Tab -->
+            <div id="tab-schedule" class="tab-pane active">
+                <p class="tab-description">Configure recurring scan frequencies or custom cron schedules.</p>
+                <div class="form-group">
+                    <label class="form-label">Execution Schedule Preset</label>
+                    <select id="schedule-preset" class="form-control" onchange="applySchedulePreset(this.value)">
+                        <option value="disabled">Disabled (Manual Execution Only)</option>
+                        <option value="hourly">Every 1 Hour (0 * * * *)</option>
+                        <option value="6hours">Every 6 Hours (0 */6 * * *)</option>
+                        <option value="daily_5am" selected>Daily at 5:00 AM IST (0 5 * * *)</option>
+                        <option value="daily_midnight">Daily at Midnight (0 0 * * *)</option>
+                        <option value="custom">Custom Cron Expression</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Cron Expression</label>
+                    <input type="text" id="schedule-cron" class="form-control" placeholder="0 5 * * *" value="0 5 * * *">
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="schedule-enabled"> Enable Background Scheduled Scans
+                    </label>
+                </div>
+                <button class="btn-drawer-save" onclick="saveScheduleSettings()">💾 Save Schedule Settings</button>
+            </div>
+
+            <!-- Clear Cache Tab -->
+            <div id="tab-cache" class="tab-pane">
+                <p class="tab-description">Manually clear live snapshot captures and visual difference heatmaps to reclaim storage space.</p>
+                <div style="background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 6px; padding: 0.85rem; font-size: 0.82rem; color: #cbd5e1; margin-bottom: 1.25rem;">
+                    <strong>ℹ️ Storage Management:</strong> Baseline snapshots will remain intact. Only temporary live captures and diff heatmaps are wiped.
+                </div>
+                <button class="btn-drawer-danger" onclick="confirmAndClearCache()">🧹 Clear Snapshot Cache</button>
+            </div>
+
+            <!-- n8n Integration Tab -->
+            <div id="tab-integrations" class="tab-pane">
+                <p class="tab-description">Integrate with <strong>n8n</strong> to trigger webhooks & automation workflows when visual changes are detected.</p>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="n8n-enabled"> Enable n8n Webhook Integration
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">n8n Webhook URL</label>
+                    <input type="url" id="n8n-url" class="form-control" placeholder="https://n8n.yourdomain.com/webhook/..." value="">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Trigger Condition</label>
+                    <select id="n8n-condition" class="form-control">
+                        <option value="on_change">Only when visual changes are detected</option>
+                        <option value="always">On every completed scan</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Authorization Token / Secret (Optional)</label>
+                    <input type="text" id="n8n-auth" class="form-control" placeholder="Bearer token or secret key" value="">
+                </div>
+                <div class="drawer-btn-group">
+                    <button class="btn-drawer-save" onclick="saveIntegrationSettings()">💾 Save Integration</button>
+                    <button class="btn-drawer-secondary" onclick="testN8nConnection()">⚡ Test n8n Webhook</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Floating Smooth Scroll To Top Button -->
     <button id="scrollToTopBtn" class="scroll-top-btn" onclick="scrollToTop()" title="Scroll back to top">
         <svg viewBox="0 0 24 24"><path d="M12 4l-8 8h5v8h6v-8h5z"/></svg>
@@ -1493,6 +1792,145 @@ def generate_html_report(results: list[dict]) -> tuple[Path, Path]:
         let isServerConnected = false;
         let pollingInterval = null;
         let lastKnownState = null;
+
+        function toggleSettingsDrawer(show) {{
+            const drawer = document.getElementById('settingsDrawer');
+            const overlay = document.getElementById('drawerOverlay');
+            if (!drawer || !overlay) return;
+            const isOpening = show !== undefined ? show : !drawer.classList.contains('open');
+            if (isOpening) {{
+                drawer.classList.add('open');
+                overlay.classList.add('open');
+                loadSettingsFromBackend();
+            }} else {{
+                drawer.classList.remove('open');
+                overlay.classList.remove('open');
+            }}
+        }}
+
+        function switchDrawerTab(tabName) {{
+            document.querySelectorAll('.drawer-tab').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.remove('active'));
+            
+            const activePane = document.getElementById(`tab-${{tabName}}`);
+            const tabs = document.querySelectorAll('.drawer-tab');
+            if (tabName === 'schedule' && tabs[0]) tabs[0].classList.add('active');
+            if (tabName === 'cache' && tabs[1]) tabs[1].classList.add('active');
+            if (tabName === 'integrations' && tabs[2]) tabs[2].classList.add('active');
+            if (activePane) activePane.classList.add('active');
+        }}
+
+        async function loadSettingsFromBackend() {{
+            if (!isServerConnected) return;
+            try {{
+                const resp = await fetch('/api/settings');
+                if (resp.ok) {{
+                    const data = await resp.json();
+                    if (data.schedule) {{
+                        const s = data.schedule;
+                        const enabledCb = document.getElementById('schedule-enabled');
+                        const cronInput = document.getElementById('schedule-cron');
+                        const presetSel = document.getElementById('schedule-preset');
+                        if (enabledCb) enabledCb.checked = s.enabled || false;
+                        if (cronInput) cronInput.value = s.cron_expression || '0 5 * * *';
+                        if (presetSel && s.preset) presetSel.value = s.preset;
+                    }}
+                    if (data.integrations) {{
+                        const i = data.integrations;
+                        const n8nEnabled = document.getElementById('n8n-enabled');
+                        const n8nUrl = document.getElementById('n8n-url');
+                        const n8nCondition = document.getElementById('n8n-condition');
+                        const n8nAuth = document.getElementById('n8n-auth');
+                        if (n8nEnabled) n8nEnabled.checked = i.n8n_enabled || false;
+                        if (n8nUrl) n8nUrl.value = i.n8n_webhook_url || '';
+                        if (n8nCondition) n8nCondition.value = i.n8n_trigger_condition || 'on_change';
+                        if (n8nAuth) n8nAuth.value = i.n8n_auth_header || '';
+                    }}
+                }}
+            }} catch(e) {{}}
+        }}
+
+        async function saveScheduleSettings() {{
+            if (!isServerConnected) {{
+                alert("Server is offline. Start 'python visual_change_detector.py serve' to save settings.");
+                return;
+            }}
+            const enabled = document.getElementById('schedule-enabled')?.checked || false;
+            const cron_expression = document.getElementById('schedule-cron')?.value || '0 5 * * *';
+            const preset = document.getElementById('schedule-preset')?.value || 'custom';
+            try {{
+                const resp = await fetch('/api/settings/schedule', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{ enabled, cron_expression, preset }})
+                }});
+                const res = await resp.json();
+                alert(res.message || 'Schedule updated.');
+            }} catch(e) {{
+                alert('Error saving schedule: ' + e);
+            }}
+        }}
+
+        async function saveIntegrationSettings() {{
+            if (!isServerConnected) {{
+                alert("Server is offline. Start 'python visual_change_detector.py serve' to save settings.");
+                return;
+            }}
+            const n8n_enabled = document.getElementById('n8n-enabled')?.checked || false;
+            const n8n_webhook_url = document.getElementById('n8n-url')?.value || '';
+            const n8n_trigger_condition = document.getElementById('n8n-condition')?.value || 'on_change';
+            const n8n_auth_header = document.getElementById('n8n-auth')?.value || '';
+            try {{
+                const resp = await fetch('/api/settings/integrations', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{ n8n_enabled, n8n_webhook_url, n8n_trigger_condition, n8n_auth_header }})
+                }});
+                const res = await resp.json();
+                alert(res.message || 'Integration settings saved.');
+            }} catch(e) {{
+                alert('Error saving integrations: ' + e);
+            }}
+        }}
+
+        async function testN8nConnection() {{
+            if (!isServerConnected) {{
+                alert("Server is offline. Start 'python visual_change_detector.py serve' to test webhooks.");
+                return;
+            }}
+            try {{
+                const resp = await fetch('/api/test-n8n', {{ method: 'POST' }});
+                const res = await resp.json();
+                alert(res.message);
+            }} catch(e) {{
+                alert('Error testing webhook: ' + e);
+            }}
+        }}
+
+        async function confirmAndClearCache() {{
+            if (!confirm("Are you sure you want to clear temporary live screenshots and visual diff heatmaps?\\n\\nBaseline snapshots will NOT be deleted.")) return;
+            if (!isServerConnected) {{
+                alert("Server is offline. Start 'python visual_change_detector.py serve' to clear cache.");
+                return;
+            }}
+            try {{
+                const resp = await fetch('/api/settings/clear-cache', {{ method: 'POST' }});
+                const res = await resp.json();
+                alert(res.message || 'Cache cleared.');
+                window.location.reload();
+            }} catch(e) {{
+                alert('Error clearing cache: ' + e);
+            }}
+        }}
+
+        function applySchedulePreset(val) {{
+            const cronInput = document.getElementById('schedule-cron');
+            if (!cronInput) return;
+            if (val === 'hourly') cronInput.value = '0 * * * *';
+            else if (val === '6hours') cronInput.value = '0 */6 * * *';
+            else if (val === 'daily_5am') cronInput.value = '0 5 * * *';
+            else if (val === 'daily_midnight') cronInput.value = '0 0 * * *';
+        }}
 
         function toggleAddDomainCard() {{
             const card = document.getElementById('addDomainCard');
@@ -1841,7 +2279,12 @@ def generate_html_report(results: list[dict]) -> tuple[Path, Path]:
                 rowsHtml += `
                     <tr>
                         <td><strong>${{res.originalIndex}}</strong></td>
-                        <td style="word-break: break-all;"><a href="${{res.url}}" target="_blank" style="color: #f8fafc; text-decoration: none;">${{res.url}}</a></td>
+                        <td style="word-break: break-all;">
+                            <a href="${{res.url}}" target="_blank" style="color: #f8fafc; text-decoration: none; font-weight:600;">${{res.url}}</a>
+                            <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.25rem;">
+                                📸 Baseline last updated: <strong style="color:#cbd5e1;">${{res.baseline_last_updated || 'Baseline not created'}}</strong>
+                            </div>
+                        </td>
                         <td><span class="badge ${{badgeClass}}">${{res.status}}</span></td>
                         <td><strong>${{pctStr}}</strong></td>
                         <td>${{pixelsStr}}</td>
@@ -1913,6 +2356,9 @@ def generate_html_report(results: list[dict]) -> tuple[Path, Path]:
                                     🗑️ Remove
                                 </button>
                             </div>
+                            <div class="baseline-timestamp-tag" title="Exact file modification timestamp of baseline screenshot">
+                                📸 Baseline last updated: <strong>${{res.baseline_last_updated || 'Baseline not created'}}</strong>
+                            </div>
                         </div>
                         <div class="badge ${{badgeClass}}">${{res.status}} (${{res.percentage}}% Diff)</div>
                     </div>
@@ -1966,10 +2412,10 @@ def generate_html_report(results: list[dict]) -> tuple[Path, Path]:
 </body>
 </html>
 """
-    timestamped_file = CACHE_DIR / f"report_{timestamp_slug}.html"
-    timestamped_file.write_text(html_content, encoding="utf-8")
+    daily_report_file = CACHE_DIR / f"report_{today_date_slug}.html"
+    daily_report_file.write_text(html_content, encoding="utf-8")
     REPORT_FILE.write_text(html_content, encoding="utf-8")
-    return timestamped_file, REPORT_FILE
+    return daily_report_file, REPORT_FILE
 
 def main():
     parser = argparse.ArgumentParser(
