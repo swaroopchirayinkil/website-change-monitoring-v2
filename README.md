@@ -155,6 +155,12 @@ sudo ./venv/bin/playwright install-deps chromium
 python visual_change_detector.py <command> [options]
 ```
 
+#### Eg: Command Syntax to run the Rest API Server and create dashboard
+
+```bash
+python visual_change_detector.py serve
+```
+
 #### Subcommands
 * `serve`: Launch the interactive Web Dashboard & REST API server (`http://localhost:8000/report.html`).
 * `add`: Single or bulk add domain(s) to monitoring list with deduplication and optional baseline generation (`--create-baseline` / `-b`).
