@@ -1,0 +1,20 @@
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# Cache directories & generated reports
+.visual_cache/
+.website_change_cache/
+report.html
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# OS generated files
+.DS_Store
+Thumbs.db
