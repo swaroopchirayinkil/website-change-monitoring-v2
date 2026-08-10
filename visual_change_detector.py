@@ -27,7 +27,6 @@ import socketserver
 import sys
 import threading
 import time
-import urllib.request
 import webbrowser
 from datetime import datetime, date, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -40,12 +39,6 @@ BASELINES_DIR = CACHE_DIR / "baselines"
 LATEST_DIR = CACHE_DIR / "latest"
 DIFFS_DIR = CACHE_DIR / "diffs"
 REPORT_FILE = CACHE_DIR / "report.html"
-INTEGRATIONS_FILE = CACHE_DIR / "integrations.json"
-SCHEDULE_FILE = CACHE_DIR / "schedule.json"
-
-_thread_local = threading.local()
-_thread_browsers = []
-_thread_browsers_lock = threading.Lock()
 
 def get_baseline_timestamp_display(baseline_path: Path) -> str:
     """Return formatted timestamp string of baseline modification time."""
@@ -77,99 +70,42 @@ def cleanup_old_reports(max_days: int = 5):
             except ValueError:
                 pass
 
-def load_integrations() -> dict:
-    """Load third-party integration settings (n8n)."""
-    default_cfg = {
-        "n8n_enabled": False,
-        "n8n_webhook_url": "",
-        "n8n_trigger_condition": "on_change",
-        "n8n_auth_header": "",
-    }
-    if INTEGRATIONS_FILE.exists():
-        try:
-            with open(INTEGRATIONS_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                default_cfg.update(data)
-        except Exception:
-            pass
-    return default_cfg
+def get_historical_reports() -> list[dict]:
+    """Retrieve list of available historical daily reports in CACHE_DIR (within 5-day retention window)."""
+    if not CACHE_DIR.exists():
+        return []
+    cleanup_old_reports(max_days=5)
 
-def save_integrations(data: dict) -> bool:
-    """Save third-party integration settings (n8n)."""
-    try:
-        cfg = load_integrations()
-        cfg.update(data)
-        with open(INTEGRATIONS_FILE, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, indent=2)
-        return True
-    except Exception:
-        return False
+    pattern = re.compile(r"^report_(\d{4}-\d{2}-\d{2})\.html$")
+    reports = []
+    today_str = date.today().strftime("%Y-%m-%d")
 
-def load_schedule() -> dict:
-    """Load cron/scan schedule settings."""
-    default_cfg = {
-        "cron_expression": "0 5 * * *",
-        "preset": "daily_5am",
-        "enabled": False,
-    }
-    if SCHEDULE_FILE.exists():
-        try:
-            with open(SCHEDULE_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                default_cfg.update(data)
-        except Exception:
-            pass
-    return default_cfg
-
-def save_schedule(data: dict) -> bool:
-    """Save cron/scan schedule settings."""
-    try:
-        cfg = load_schedule()
-        cfg.update(data)
-        with open(SCHEDULE_FILE, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, indent=2)
-        return True
-    except Exception:
-        return False
-
-def dispatch_n8n_webhook(scan_results: list[dict], action: str = "check"):
-    """Asynchronously dispatch scan execution payload to n8n webhook if configured."""
-    cfg = load_integrations()
-    if not cfg.get("n8n_enabled") or not cfg.get("n8n_webhook_url"):
-        return
-
-    changed_items = [r for r in scan_results if r.get("status") == "Changed"]
-    condition = cfg.get("n8n_trigger_condition", "on_change")
-    if condition == "on_change" and not changed_items:
-        return
-
-    payload = {
-        "event": "scan_completed",
-        "action": action,
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "total_urls": len(scan_results),
-        "changed_urls": len(changed_items),
-        "unchanged_urls": len([r for r in scan_results if r.get("status") == "Unchanged"]),
-        "failed_urls": len([r for r in scan_results if r.get("status") == "Failed"]),
-        "changed_items": [{"url": r["url"], "percentage": r.get("percentage", 0)} for r in changed_items],
-        "report_url": "http://localhost:8000/report.html"
-    }
-
-    def _send():
-        try:
-            req = urllib.request.Request(
-                cfg["n8n_webhook_url"],
-                data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"}
-            )
-            if cfg.get("n8n_auth_header"):
-                req.add_header("Authorization", cfg["n8n_auth_header"])
-            with urllib.request.urlopen(req, timeout=10):
+    files = sorted(CACHE_DIR.glob("report_*.html"), reverse=True)
+    for f in files:
+        match = pattern.match(f.name)
+        if match:
+            date_str = match.group(1)
+            try:
+                dt = datetime.strptime(date_str, "%Y-%m-%d")
+                formatted_label = dt.strftime("%d-%b-%Y")
+                is_today = (date_str == today_str)
+                mtime = f.stat().st_mtime
+                mod_time = datetime.fromtimestamp(mtime).strftime("%I:%M %p")
+                reports.append({
+                    "filename": f.name,
+                    "date": date_str,
+                    "formatted_date": formatted_label,
+                    "is_today": is_today,
+                    "mod_time": mod_time,
+                    "size_kb": round(f.stat().st_size / 1024, 1)
+                })
+            except ValueError:
                 pass
-        except Exception as e:
-            print(f"⚠️ Failed to send n8n webhook: {e}")
+    return reports
 
-    threading.Thread(target=_send, daemon=True).start()
+_thread_local = threading.local()
+_thread_browsers = []
+_thread_browsers_lock = threading.Lock()
 
 def get_thread_browser():
     """Retrieve or initialize a thread-local Playwright browser instance to maximize scanning throughput."""
@@ -652,7 +588,6 @@ class ScanManager:
 
                 combined = build_combined_report_results(results_by_url)
                 generate_html_report(combined)
-                dispatch_n8n_webhook(combined, action="update")
 
                 with self.lock:
                     self.status_message = "Baseline update completed."
@@ -739,7 +674,6 @@ class ScanManager:
 
                 combined = build_combined_report_results(results_by_url)
                 generate_html_report(combined)
-                dispatch_n8n_webhook(combined, action="check")
 
                 with self.lock:
                     self.status_message = "Live check completed."
@@ -776,11 +710,10 @@ class MonitoringRequestHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/api/status":
             self.send_json_response(scan_manager.get_state())
-        elif self.path == "/api/settings":
+        elif self.path == "/api/history":
             self.send_json_response({
                 "success": True,
-                "schedule": load_schedule(),
-                "integrations": load_integrations()
+                "reports": get_historical_reports()
             })
         elif self.path == "/" or self.path == "/index.html":
             self.path = "/report.html"
@@ -839,69 +772,6 @@ class MonitoringRequestHandler(http.server.SimpleHTTPRequestHandler):
                 "total": len(load_urls_from_file(target_file))
             })
 
-        elif self.path == "/api/settings/schedule":
-            saved = save_schedule(data)
-            self.send_json_response({
-                "success": saved,
-                "message": "Schedule configuration saved successfully." if saved else "Failed to save schedule configuration."
-            })
-
-        elif self.path == "/api/settings/integrations":
-            saved = save_integrations(data)
-            self.send_json_response({
-                "success": saved,
-                "message": "Third-party integration settings saved successfully." if saved else "Failed to save integration settings."
-            })
-
-        elif self.path == "/api/settings/clear-cache":
-            try:
-                for item in LATEST_DIR.glob("*.png"):
-                    try: item.unlink()
-                    except Exception: pass
-                for item in DIFFS_DIR.glob("*.png"):
-                    try: item.unlink()
-                    except Exception: pass
-
-                combined = build_combined_report_results()
-                generate_html_report(combined)
-                self.send_json_response({
-                    "success": True,
-                    "message": "Snapshot cache (live captures & diff heatmaps) cleared successfully. Baseline snapshots preserved."
-                })
-            except Exception as e:
-                self.send_json_response({"success": False, "message": f"Error clearing cache: {e}"})
-
-        elif self.path == "/api/test-n8n":
-            cfg = load_integrations()
-            webhook_url = cfg.get("n8n_webhook_url", "").strip()
-            if not webhook_url:
-                self.send_json_response({"success": False, "message": "n8n Webhook URL is not configured. Please enter a valid URL in settings."})
-            else:
-                payload = {
-                    "event": "test_connection",
-                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "message": "Website Change Monitoring Suite - n8n Integration Connection Test Successful!"
-                }
-                try:
-                    req = urllib.request.Request(
-                        webhook_url,
-                        data=json.dumps(payload).encode("utf-8"),
-                        headers={"Content-Type": "application/json"}
-                    )
-                    if cfg.get("n8n_auth_header"):
-                        req.add_header("Authorization", cfg["n8n_auth_header"])
-                    with urllib.request.urlopen(req, timeout=8) as resp:
-                        status_code = resp.getcode()
-                    self.send_json_response({
-                        "success": True,
-                        "message": f"✅ Test webhook successfully sent to n8n (HTTP {status_code})!"
-                    })
-                except Exception as e:
-                    self.send_json_response({
-                        "success": False,
-                        "message": f"❌ Failed to deliver test webhook to n8n: {e}"
-                    })
-
         else:
             self.send_error(404, "Endpoint not found")
 
@@ -955,8 +825,10 @@ def run_server(host: str = "0.0.0.0", port: int = 8000, open_browser: bool = Tru
         cleanup_all_browsers()
 
 def generate_html_report(results: list[dict]) -> tuple[Path, Path]:
-    """Generate a modern interactive HTML report with baseline, live, diff viewers, summary table, settings drawer, and 5-day retention."""
+    """Generate a modern interactive HTML report with baseline, live, diff viewers, summary table, and 5-day retention."""
     cleanup_old_reports(max_days=5)
+    history_reports = get_historical_reports()
+    history_json = json.dumps(history_reports)
 
     results_json = json.dumps(results)
     timestamp_display = time.strftime('%Y-%m-%d %H:%M:%S')
@@ -1603,9 +1475,7 @@ def generate_html_report(results: list[dict]) -> tuple[Path, Path]:
             background: var(--accent-blue);
             color: #0f172a;
             box-shadow: 0 12px 32px rgba(56, 189, 248, 0.4);
-            transform: translateY(-3px);
-        }}
-        .scroll-top-btn svg {{
+            transform: translateY        .scroll-top-btn svg {{
             width: 16px;
             height: 16px;
             fill: currentColor;
@@ -1614,20 +1484,105 @@ def generate_html_report(results: list[dict]) -> tuple[Path, Path]:
         .scroll-top-btn:hover svg {{
             transform: translateY(-2px);
         }}
+
+        /* Historical Reports Archive Styles */
+        .btn-history {{
+            background: linear-gradient(135deg, #7c3aed, #5b21b6);
+            color: #fff;
+            box-shadow: 0 4px 12px rgba(124, 58, 237, 0.35);
+        }}
+        .btn-history:hover {{
+            background: linear-gradient(135deg, #8b5cf6, #6d28d9);
+            box-shadow: 0 6px 16px rgba(139, 92, 246, 0.45);
+            transform: translateY(-1px);
+        }}
+        .history-card {{
+            background: var(--bg-card);
+            border: 1px solid rgba(124, 58, 237, 0.45);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 10px 25px -5px rgba(109, 40, 217, 0.25);
+            animation: fadeIn 0.25s ease-out;
+        }}
+        .history-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 1.25rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.75rem;
+        }}
+        .history-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 1rem;
+        }}
+        .history-item-card {{
+            background: #090d16;
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 1.1rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            gap: 0.85rem;
+            transition: all 0.2s ease;
+        }}
+        .history-item-card:hover {{
+            border-color: #8b5cf6;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(139, 92, 246, 0.25);
+        }}
+        .history-item-card.is-today {{
+            border-color: var(--accent-blue);
+            background: rgba(56, 189, 248, 0.05);
+        }}
+        .history-card-badge {{
+            display: inline-block;
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 0.2rem 0.6rem;
+            border-radius: 20px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }}
+        .badge-today {{
+            background: rgba(56, 189, 248, 0.2);
+            color: var(--accent-blue);
+            border: 1px solid rgba(56, 189, 248, 0.4);
+        }}
+        .badge-archive {{
+            background: rgba(148, 163, 184, 0.15);
+            color: var(--text-muted);
+            border: 1px solid var(--border-color);
+        }}
+        .btn-view-report {{
+            padding: 0.55rem 1rem;
+            background: rgba(56, 189, 248, 0.15);
+            border: 1px solid var(--accent-blue);
+            color: var(--accent-blue);
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            text-align: center;
+            text-decoration: none;
+            transition: all 0.2s;
+            display: block;
+        }}
+        .btn-view-report:hover {{
+            background: var(--accent-blue);
+            color: #0f172a;
+            box-shadow: 0 4px 12px rgba(56, 189, 248, 0.3);
+        }}
     </style>
 </head>
 <body>
     <div class="header">
-        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
-            <div>
-                <h1>Visual Change Monitoring Dashboard</h1>
-                <p>Generated on {timestamp_display} | Daily Retention Archive: report_{today_date_slug}.html (5-Day Retention)</p>
-            </div>
-            <div>
-                <button id="btn-settings-toggle" class="btn-settings-toggle" onclick="toggleSettingsDrawer()">
-                    <span>☰</span> Settings & Integrations
-                </button>
-            </div>
+        <div>
+            <h1>Visual Change Monitoring Dashboard</h1>
+            <p>Generated on {timestamp_display} | Daily Retention Archive: report_{today_date_slug}.html (5-Day Retention)</p>
         </div>
     </div>
 
@@ -1658,6 +1613,9 @@ def generate_html_report(results: list[dict]) -> tuple[Path, Path]:
                 <button id="btn-toggle-add-domain" class="btn-action btn-add-domain" onclick="toggleAddDomainCard()">
                     ➕ Add Domain(s)
                 </button>
+                <button id="btn-toggle-history" class="btn-action btn-history" onclick="toggleHistoryCard()">
+                    📜 View Historical Reports (Last 5 Days)
+                </button>
             </div>
         </div>
     </div>
@@ -1682,6 +1640,24 @@ def generate_html_report(results: list[dict]) -> tuple[Path, Path]:
         </div>
     </div>
 
+    <!-- Historical Reports Expandable Card -->
+    <div id="historyCard" class="history-card hidden">
+        <div class="history-header">
+            <div>
+                <h3 style="display:flex; align-items:center; gap:0.5rem; color:#fff; font-size:1.15rem; font-weight:700;">
+                    📜 Historical Reports Archive (5-Day Retention Window)
+                </h3>
+                <p style="font-size:0.85rem; color:var(--text-muted); margin-top:0.25rem;">
+                    The suite automatically retains 1 report per calendar day for up to 5 days. Click <strong>View Report</strong> below to inspect any previous execution report.
+                </p>
+            </div>
+            <button onclick="toggleHistoryCard()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1.2rem;">✖</button>
+        </div>
+        <div id="historyGrid" class="history-grid">
+            <!-- Dynamically populated -->
+        </div>
+    </div>
+
     <!-- Live Task Progress Banner -->
     <div id="progressContainer" class="progress-banner hidden">
         <div class="progress-header">
@@ -1703,85 +1679,6 @@ def generate_html_report(results: list[dict]) -> tuple[Path, Path]:
 
     <div id="app"></div>
 
-    <!-- Application Settings & Integrations Slide-Over Drawer -->
-    <div id="drawerOverlay" class="drawer-overlay" onclick="toggleSettingsDrawer(false)"></div>
-    <div id="settingsDrawer" class="settings-drawer">
-        <div class="drawer-header">
-            <h3>⚙️ Settings & Integrations</h3>
-            <button class="drawer-close-btn" onclick="toggleSettingsDrawer(false)">✕</button>
-        </div>
-        <div class="drawer-tabs">
-            <button class="drawer-tab active" onclick="switchDrawerTab('schedule')">📅 Schedule</button>
-            <button class="drawer-tab" onclick="switchDrawerTab('cache')">🧹 Clear Cache</button>
-            <button class="drawer-tab" onclick="switchDrawerTab('integrations')">🔌 n8n Integration</button>
-        </div>
-        <div class="drawer-content">
-            <!-- Schedule Tab -->
-            <div id="tab-schedule" class="tab-pane active">
-                <p class="tab-description">Configure recurring scan frequencies or custom cron schedules.</p>
-                <div class="form-group">
-                    <label class="form-label">Execution Schedule Preset</label>
-                    <select id="schedule-preset" class="form-control" onchange="applySchedulePreset(this.value)">
-                        <option value="disabled">Disabled (Manual Execution Only)</option>
-                        <option value="hourly">Every 1 Hour (0 * * * *)</option>
-                        <option value="6hours">Every 6 Hours (0 */6 * * *)</option>
-                        <option value="daily_5am" selected>Daily at 5:00 AM IST (0 5 * * *)</option>
-                        <option value="daily_midnight">Daily at Midnight (0 0 * * *)</option>
-                        <option value="custom">Custom Cron Expression</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Cron Expression</label>
-                    <input type="text" id="schedule-cron" class="form-control" placeholder="0 5 * * *" value="0 5 * * *">
-                </div>
-                <div class="form-group">
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="schedule-enabled"> Enable Background Scheduled Scans
-                    </label>
-                </div>
-                <button class="btn-drawer-save" onclick="saveScheduleSettings()">💾 Save Schedule Settings</button>
-            </div>
-
-            <!-- Clear Cache Tab -->
-            <div id="tab-cache" class="tab-pane">
-                <p class="tab-description">Manually clear live snapshot captures and visual difference heatmaps to reclaim storage space.</p>
-                <div style="background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 6px; padding: 0.85rem; font-size: 0.82rem; color: #cbd5e1; margin-bottom: 1.25rem;">
-                    <strong>ℹ️ Storage Management:</strong> Baseline snapshots will remain intact. Only temporary live captures and diff heatmaps are wiped.
-                </div>
-                <button class="btn-drawer-danger" onclick="confirmAndClearCache()">🧹 Clear Snapshot Cache</button>
-            </div>
-
-            <!-- n8n Integration Tab -->
-            <div id="tab-integrations" class="tab-pane">
-                <p class="tab-description">Integrate with <strong>n8n</strong> to trigger webhooks & automation workflows when visual changes are detected.</p>
-                <div class="form-group">
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="n8n-enabled"> Enable n8n Webhook Integration
-                    </label>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">n8n Webhook URL</label>
-                    <input type="url" id="n8n-url" class="form-control" placeholder="https://n8n.yourdomain.com/webhook/..." value="">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Trigger Condition</label>
-                    <select id="n8n-condition" class="form-control">
-                        <option value="on_change">Only when visual changes are detected</option>
-                        <option value="always">On every completed scan</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Authorization Token / Secret (Optional)</label>
-                    <input type="text" id="n8n-auth" class="form-control" placeholder="Bearer token or secret key" value="">
-                </div>
-                <div class="drawer-btn-group">
-                    <button class="btn-drawer-save" onclick="saveIntegrationSettings()">💾 Save Integration</button>
-                    <button class="btn-drawer-secondary" onclick="testN8nConnection()">⚡ Test n8n Webhook</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- Floating Smooth Scroll To Top Button -->
     <button id="scrollToTopBtn" class="scroll-top-btn" onclick="scrollToTop()" title="Scroll back to top">
         <svg viewBox="0 0 24 24"><path d="M12 4l-8 8h5v8h6v-8h5z"/></svg>
@@ -1792,144 +1689,56 @@ def generate_html_report(results: list[dict]) -> tuple[Path, Path]:
         let isServerConnected = false;
         let pollingInterval = null;
         let lastKnownState = null;
+        const initialHistoryData = {history_json};
 
-        function toggleSettingsDrawer(show) {{
-            const drawer = document.getElementById('settingsDrawer');
-            const overlay = document.getElementById('drawerOverlay');
-            if (!drawer || !overlay) return;
-            const isOpening = show !== undefined ? show : !drawer.classList.contains('open');
-            if (isOpening) {{
-                drawer.classList.add('open');
-                overlay.classList.add('open');
-                loadSettingsFromBackend();
-            }} else {{
-                drawer.classList.remove('open');
-                overlay.classList.remove('open');
-            }}
-        }}
-
-        function switchDrawerTab(tabName) {{
-            document.querySelectorAll('.drawer-tab').forEach(btn => btn.classList.remove('active'));
-            document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.remove('active'));
-            
-            const activePane = document.getElementById(`tab-${{tabName}}`);
-            const tabs = document.querySelectorAll('.drawer-tab');
-            if (tabName === 'schedule' && tabs[0]) tabs[0].classList.add('active');
-            if (tabName === 'cache' && tabs[1]) tabs[1].classList.add('active');
-            if (tabName === 'integrations' && tabs[2]) tabs[2].classList.add('active');
-            if (activePane) activePane.classList.add('active');
-        }}
-
-        async function loadSettingsFromBackend() {{
-            if (!isServerConnected) return;
-            try {{
-                const resp = await fetch('/api/settings');
-                if (resp.ok) {{
-                    const data = await resp.json();
-                    if (data.schedule) {{
-                        const s = data.schedule;
-                        const enabledCb = document.getElementById('schedule-enabled');
-                        const cronInput = document.getElementById('schedule-cron');
-                        const presetSel = document.getElementById('schedule-preset');
-                        if (enabledCb) enabledCb.checked = s.enabled || false;
-                        if (cronInput) cronInput.value = s.cron_expression || '0 5 * * *';
-                        if (presetSel && s.preset) presetSel.value = s.preset;
-                    }}
-                    if (data.integrations) {{
-                        const i = data.integrations;
-                        const n8nEnabled = document.getElementById('n8n-enabled');
-                        const n8nUrl = document.getElementById('n8n-url');
-                        const n8nCondition = document.getElementById('n8n-condition');
-                        const n8nAuth = document.getElementById('n8n-auth');
-                        if (n8nEnabled) n8nEnabled.checked = i.n8n_enabled || false;
-                        if (n8nUrl) n8nUrl.value = i.n8n_webhook_url || '';
-                        if (n8nCondition) n8nCondition.value = i.n8n_trigger_condition || 'on_change';
-                        if (n8nAuth) n8nAuth.value = i.n8n_auth_header || '';
-                    }}
+        function toggleHistoryCard() {{
+            const card = document.getElementById('historyCard');
+            if (card) {{
+                card.classList.toggle('hidden');
+                if (!card.classList.contains('hidden')) {{
+                    loadHistoryReports();
                 }}
-            }} catch(e) {{}}
+            }}
         }}
 
-        async function saveScheduleSettings() {{
-            if (!isServerConnected) {{
-                alert("Server is offline. Start 'python visual_change_detector.py serve' to save settings.");
+        async function loadHistoryReports() {{
+            let reports = initialHistoryData || [];
+            if (isServerConnected) {{
+                try {{
+                    const resp = await fetch('/api/history');
+                    if (resp.ok) {{
+                        const data = await resp.json();
+                        if (data.reports) reports = data.reports;
+                    }}
+                }} catch(e) {{}}
+            }}
+            renderHistoryGrid(reports);
+        }}
+
+        function renderHistoryGrid(reports) {{
+            const grid = document.getElementById('historyGrid');
+            if (!grid) return;
+            if (!reports || reports.length === 0) {{
+                grid.innerHTML = '<p style="color:var(--text-muted); font-size:0.9rem;">No historical reports found in retention window.</p>';
                 return;
             }}
-            const enabled = document.getElementById('schedule-enabled')?.checked || false;
-            const cron_expression = document.getElementById('schedule-cron')?.value || '0 5 * * *';
-            const preset = document.getElementById('schedule-preset')?.value || 'custom';
-            try {{
-                const resp = await fetch('/api/settings/schedule', {{
-                    method: 'POST',
-                    headers: {{ 'Content-Type': 'application/json' }},
-                    body: JSON.stringify({{ enabled, cron_expression, preset }})
-                }});
-                const res = await resp.json();
-                alert(res.message || 'Schedule updated.');
-            }} catch(e) {{
-                alert('Error saving schedule: ' + e);
-            }}
-        }}
-
-        async function saveIntegrationSettings() {{
-            if (!isServerConnected) {{
-                alert("Server is offline. Start 'python visual_change_detector.py serve' to save settings.");
-                return;
-            }}
-            const n8n_enabled = document.getElementById('n8n-enabled')?.checked || false;
-            const n8n_webhook_url = document.getElementById('n8n-url')?.value || '';
-            const n8n_trigger_condition = document.getElementById('n8n-condition')?.value || 'on_change';
-            const n8n_auth_header = document.getElementById('n8n-auth')?.value || '';
-            try {{
-                const resp = await fetch('/api/settings/integrations', {{
-                    method: 'POST',
-                    headers: {{ 'Content-Type': 'application/json' }},
-                    body: JSON.stringify({{ n8n_enabled, n8n_webhook_url, n8n_trigger_condition, n8n_auth_header }})
-                }});
-                const res = await resp.json();
-                alert(res.message || 'Integration settings saved.');
-            }} catch(e) {{
-                alert('Error saving integrations: ' + e);
-            }}
-        }}
-
-        async function testN8nConnection() {{
-            if (!isServerConnected) {{
-                alert("Server is offline. Start 'python visual_change_detector.py serve' to test webhooks.");
-                return;
-            }}
-            try {{
-                const resp = await fetch('/api/test-n8n', {{ method: 'POST' }});
-                const res = await resp.json();
-                alert(res.message);
-            }} catch(e) {{
-                alert('Error testing webhook: ' + e);
-            }}
-        }}
-
-        async function confirmAndClearCache() {{
-            if (!confirm("Are you sure you want to clear temporary live screenshots and visual diff heatmaps?\\n\\nBaseline snapshots will NOT be deleted.")) return;
-            if (!isServerConnected) {{
-                alert("Server is offline. Start 'python visual_change_detector.py serve' to clear cache.");
-                return;
-            }}
-            try {{
-                const resp = await fetch('/api/settings/clear-cache', {{ method: 'POST' }});
-                const res = await resp.json();
-                alert(res.message || 'Cache cleared.');
-                window.location.reload();
-            }} catch(e) {{
-                alert('Error clearing cache: ' + e);
-            }}
-        }}
-
-        function applySchedulePreset(val) {{
-            const cronInput = document.getElementById('schedule-cron');
-            if (!cronInput) return;
-            if (val === 'hourly') cronInput.value = '0 * * * *';
-            else if (val === '6hours') cronInput.value = '0 */6 * * *';
-            else if (val === 'daily_5am') cronInput.value = '0 5 * * *';
-            else if (val === 'daily_midnight') cronInput.value = '0 0 * * *';
+            grid.innerHTML = reports.map(r => `
+                <div class="history-item-card ${{r.is_today ? 'is-today' : ''}}">
+                    <div>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
+                            <span style="font-weight:700; font-size:1rem; color:#fff;">🗓️ ${{r.formatted_date}}</span>
+                            <span class="history-card-badge ${{r.is_today ? 'badge-today' : 'badge-archive'}}">${{r.is_today ? 'Today' : 'Archive'}}</span>
+                        </div>
+                        <div style="font-size:0.8rem; color:var(--text-muted); margin-top:0.3rem;">
+                            📄 <code>${{r.filename}}</code><br>
+                            🕒 Last updated: ${{r.mod_time}} (${{r.size_kb}} KB)
+                        </div>
+                    </div>
+                    <a href="${{r.filename}}" class="btn-view-report" target="_blank">
+                        👁️ View Report
+                    </a>
+                </div>
+            `).join('');
         }}
 
         function toggleAddDomainCard() {{
