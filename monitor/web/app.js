@@ -24,6 +24,100 @@ function toggleHistoryCard() {
     toggleRHCard('historyCard', loadHistoryReports);
 }
 
+function toggleScheduleCard() {
+    toggleRHCard('scheduleCard', loadScheduleConfig);
+}
+
+async function loadScheduleConfig() {
+    if (!isServerConnected) return;
+    try {
+        const resp = await fetch('/api/schedule');
+        if (resp.ok) {
+            const cfg = await resp.json();
+            const enableCb = document.getElementById('scheduleEnableCheckbox');
+            const statusTxt = document.getElementById('scheduleStatusText');
+            const freqSel = document.getElementById('scheduleFrequencySelect');
+            const hourSel = document.getElementById('scheduleHourSelect');
+            const minSel = document.getElementById('scheduleMinuteSelect');
+            const ampmSel = document.getElementById('scheduleAmpmSelect');
+            const tzSel = document.getElementById('scheduleTimezoneSelect');
+            const nextTxt = document.getElementById('scheduleNextRunText');
+            const countTxt = document.getElementById('scheduleCountdownText');
+
+            if (enableCb) enableCb.checked = !!cfg.enabled;
+            if (statusTxt) statusTxt.innerText = cfg.enabled ? '🟢 Active' : '⚪ Disabled';
+            if (freqSel) freqSel.value = cfg.frequency || 'daily';
+            if (hourSel) hourSel.value = cfg.hour || 9;
+            if (minSel) minSel.value = cfg.minute !== undefined ? cfg.minute : 0;
+            if (ampmSel) ampmSel.value = cfg.ampm || 'AM';
+            if (tzSel) tzSel.value = cfg.timezone || 'UTC';
+            if (nextTxt) nextTxt.innerText = cfg.next_run || 'N/A';
+            if (countTxt) countTxt.innerText = cfg.countdown_display || 'N/A';
+
+            handleFrequencyChange();
+        }
+    } catch(e) {}
+}
+
+function handleFrequencyChange() {
+    const freqSel = document.getElementById('scheduleFrequencySelect');
+    const timeGrp = document.getElementById('scheduleTimeGroup');
+    if (freqSel && timeGrp) {
+        if (freqSel.value === 'daily') {
+            timeGrp.style.display = 'flex';
+        } else {
+            timeGrp.style.display = 'none';
+        }
+    }
+}
+
+async function submitScheduleConfig() {
+    if (!isServerConnected) {
+        alert("The backend web server is not currently running.\n\nTo manage schedules from this dashboard, start the server in your terminal:\n\npython visual_change_detector.py serve");
+        return;
+    }
+
+    const enabled = document.getElementById('scheduleEnableCheckbox')?.checked || false;
+    const frequency = document.getElementById('scheduleFrequencySelect')?.value || 'daily';
+    const hour = parseInt(document.getElementById('scheduleHourSelect')?.value || '9', 10);
+    const minute = parseInt(document.getElementById('scheduleMinuteSelect')?.value || '0', 10);
+    const ampm = document.getElementById('scheduleAmpmSelect')?.value || 'AM';
+    const timezone = document.getElementById('scheduleTimezoneSelect')?.value || 'UTC';
+    const speedSelect = document.getElementById('speedSelect');
+    const speed = speedSelect ? speedSelect.value : 'low';
+
+    const btnSave = document.getElementById('btn-save-schedule');
+    if (btnSave) btnSave.disabled = true;
+
+    try {
+        const resp = await fetch('/api/schedule', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                enabled: enabled,
+                frequency: frequency,
+                hour: hour,
+                minute: minute,
+                ampm: ampm,
+                timezone: timezone,
+                speed: speed
+            })
+        });
+
+        const res = await resp.json();
+        if (res.success) {
+            alert(`✅ Schedule ${enabled ? 'Enabled' : 'Disabled'} and saved successfully!\n\nNext Run: ${res.schedule.next_run}`);
+            loadScheduleConfig();
+        } else {
+            alert('Failed to save schedule configuration.');
+        }
+    } catch(e) {
+        alert('Error connecting to server to save schedule.');
+    } finally {
+        if (btnSave) btnSave.disabled = false;
+    }
+}
+
 async function loadHistoryReports() {
     let reports = window.initialHistoryData || [];
     if (isServerConnected) {
@@ -153,6 +247,7 @@ async function checkServerStatus() {
                 badge.className = 'server-badge online';
                 badge.innerHTML = '🟢 REST API Server Online';
             }
+            loadScheduleConfig();
             const data = await resp.json();
             if (data.is_running) {
                 startPolling();

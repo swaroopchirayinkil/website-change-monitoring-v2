@@ -374,6 +374,15 @@ body {
     transform: translateY(-1px);
 }
 
+.btn-schedule {
+    background: #4c1d95;
+}
+.btn-schedule:hover:not(:disabled) {
+    background: #5b21b6;
+    box-shadow: 0 6px 18px rgba(91, 33, 182, 0.5);
+    transform: translateY(-1px);
+}
+
 .btn-history {
     background: #2e1065;
 }
@@ -787,3 +796,94 @@ body {
     background: #8b5cf6;
     box-shadow: 0 6px 16px rgba(139, 92, 246, 0.45);
 }
+
+/* Scheduler Card & Toggle Switch Styling */
+.schedule-card {
+    background: var(--bg-card);
+    border: 1.5px solid #8b5cf6;
+    border-radius: 16px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 10px 25px -5px rgba(139, 92, 246, 0.25);
+    animation: fadeIn 0.25s ease-out;
+}
+.schedule-card.hidden { display: none; }
+.schedule-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1.25rem;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0.75rem;
+}
+.schedule-form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1.25rem;
+    margin-bottom: 1.25rem;
+}
+.schedule-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+.schedule-field label {
+    font-size: 0.75rem;
+    font-weight: 800;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.toggle-switch {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+}
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+.toggle-switch .slider {
+    width: 44px;
+    height: 24px;
+    background-color: #d1d5db;
+    border-radius: 24px;
+    transition: 0.3s;
+    position: relative;
+}
+.toggle-switch .slider:before {
+    content: "";
+    position: absolute;
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    border-radius: 50%;
+    transition: 0.3s;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+.toggle-switch input:checked + .slider {
+    background-color: #7c3aed;
+}
+.toggle-switch input:checked + .slider:before {
+    transform: translateX(20px);
+}
+
+.schedule-banner {
+    background: #f3e8ff;
+    border: 1px solid #c084fc;
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+

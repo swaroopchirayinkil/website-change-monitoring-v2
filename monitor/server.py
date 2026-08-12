@@ -16,6 +16,7 @@ from monitor.config import CACHE_DIR, REPORT_FILE, DEFAULT_DOMAIN_FILE, WEB_DIR,
 from monitor.domain_manager import url_to_slug, add_domains_to_file, remove_domains_from_file
 from monitor.scan_manager import scan_manager, build_combined_report_results
 from monitor.retention_manager import cleanup_old_reports, get_historical_reports
+from monitor.scheduler import scheduler_manager
 
 def generate_html_report(results: list[dict], output_path: Path = REPORT_FILE):
     """Generate interactive HTML report dashboard using external HTML/CSS/JS template files."""
@@ -120,6 +121,15 @@ class MonitoringRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps({"reports": reports}).encode("utf-8"))
             return
 
+        # REST API: Schedule GET Endpoint
+        if self.path == "/api/schedule":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            status = scheduler_manager.get_status()
+            self.wfile.write(json.dumps(status).encode("utf-8"))
+            return
+
         return super().do_GET()
 
     def do_POST(self):
@@ -129,6 +139,16 @@ class MonitoringRequestHandler(http.server.SimpleHTTPRequestHandler):
             post_data = json.loads(post_data_raw)
         except Exception:
             post_data = {}
+
+        # REST API: Schedule POST Endpoint
+        if self.path == "/api/schedule":
+            scheduler_manager.save_config(post_data)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            status = scheduler_manager.get_status()
+            self.wfile.write(json.dumps({"success": True, "schedule": status}).encode("utf-8"))
+            return
 
         # REST API: Start Scan Trigger
         if self.path == "/api/start-scan":
@@ -229,6 +249,8 @@ def run_server(host: str = "0.0.0.0", port: int = 8000, open_browser: bool = Tru
     if not REPORT_FILE.exists():
         combined = build_combined_report_results()
         generate_html_report(combined, REPORT_FILE)
+
+    scheduler_manager.start(report_generator=generate_html_report)
 
     class ThreadedHTTPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
         allow_reuse_address = True

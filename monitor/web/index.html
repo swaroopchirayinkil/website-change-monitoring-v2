@@ -42,6 +42,9 @@
                 <button id="btn-toggle-add-domain" class="btn-action btn-add-domain button-rh" data-rh-target="addDomainCard" onclick="toggleAddDomainCard()">
                     ➕ Add Domain(s)
                 </button>
+                <button id="btn-toggle-schedule" class="btn-action btn-schedule button-rh" data-rh-target="scheduleCard" onclick="toggleScheduleCard()">
+                    ⏰ Scheduler
+                </button>
                 <button id="btn-toggle-history" class="btn-action btn-history button-rh" data-rh-target="historyCard" onclick="toggleHistoryCard()">
                     📜 View Historical Reports (Last 5 Days)
                 </button>
@@ -65,6 +68,101 @@
             <div style="display:flex; gap:0.5rem;">
                 <button class="btn-action" style="background:#e9e5de; color:#1c1917; box-shadow:none;" onclick="toggleAddDomainCard()">Cancel</button>
                 <button id="btn-submit-add-domain" class="btn-action btn-add-domain" onclick="submitAddDomains()">Add to Monitoring</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Automated Live Scan Scheduler Expandable Card -->
+    <div id="scheduleCard" class="schedule-card hidden">
+        <div class="schedule-header">
+            <div>
+                <h3 style="display:flex; align-items:center; gap:0.5rem; color:#1c1917; font-size:1.15rem; font-weight:800;">
+                    ⏰ Automated Live Scan Scheduler
+                </h3>
+                <p style="font-size:0.85rem; color:var(--text-muted); margin-top:0.25rem;">
+                    Configure automated periodic live scans with specific times, AM/PM, timezone selection, and background execution.
+                </p>
+            </div>
+            <button onclick="toggleScheduleCard()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1.2rem;">✖</button>
+        </div>
+        <div class="schedule-body">
+            <div class="schedule-form-grid">
+                <div class="schedule-field">
+                    <label>Schedule Status</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="scheduleEnableCheckbox">
+                        <span class="slider"></span>
+                        <span id="scheduleStatusText" style="font-size:0.85rem; font-weight:700; margin-left:0.5rem;">Disabled</span>
+                    </label>
+                </div>
+                <div class="schedule-field">
+                    <label for="scheduleFrequencySelect">Frequency Mode</label>
+                    <select id="scheduleFrequencySelect" class="control-select" onchange="handleFrequencyChange()">
+                        <option value="daily" selected>📅 Daily at Specific Time</option>
+                        <option value="1h">⏱️ Every 1 Hour</option>
+                        <option value="6h">⏱️ Every 6 Hours</option>
+                        <option value="12h">⏱️ Every 12 Hours</option>
+                    </select>
+                </div>
+                <div id="scheduleTimeGroup" class="schedule-field">
+                    <label>Execution Time (12-Hour Format)</label>
+                    <div style="display:flex; gap:0.4rem; align-items:center;">
+                        <select id="scheduleHourSelect" class="control-select" style="min-width:70px;">
+                            <option value="1">01</option>
+                            <option value="2">02</option>
+                            <option value="3">03</option>
+                            <option value="4">04</option>
+                            <option value="5">05</option>
+                            <option value="6">06</option>
+                            <option value="7">07</option>
+                            <option value="8">08</option>
+                            <option value="9" selected>09</option>
+                            <option value="10">10</option>
+                            <option value="11">11</option>
+                            <option value="12">12</option>
+                        </select>
+                        <span style="font-weight:800; font-size:1.1rem;">:</span>
+                        <select id="scheduleMinuteSelect" class="control-select" style="min-width:70px;">
+                            <option value="0" selected>00</option>
+                            <option value="15">15</option>
+                            <option value="30">30</option>
+                            <option value="45">45</option>
+                        </select>
+                        <select id="scheduleAmpmSelect" class="control-select" style="min-width:75px;">
+                            <option value="AM" selected>AM</option>
+                            <option value="PM">PM</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="schedule-field">
+                    <label for="scheduleTimezoneSelect">Timezone Selection</label>
+                    <select id="scheduleTimezoneSelect" class="control-select">
+                        <option value="UTC">🌍 UTC (Universal Time)</option>
+                        <option value="Asia/Kolkata">🇮🇳 Asia/Kolkata (IST - UTC+5:30)</option>
+                        <option value="America/New_York">🇺🇸 America/New_York (EST/EDT)</option>
+                        <option value="America/Los_Angeles">🇺🇸 America/Los_Angeles (PST/PDT)</option>
+                        <option value="Europe/London">🇬🇧 Europe/London (GMT/BST)</option>
+                        <option value="Europe/Paris">🇫🇷 Europe/Paris (CET/CEST)</option>
+                        <option value="Asia/Tokyo">🇯🇵 Asia/Tokyo (JST)</option>
+                        <option value="Australia/Sydney">🇦🇺 Australia/Sydney (AEST)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="schedule-banner">
+                <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                    <span style="font-size:0.75rem; font-weight:800; text-transform:uppercase; color:var(--text-muted);">Next Scheduled Execution</span>
+                    <span id="scheduleNextRunText" style="font-size:1rem; font-weight:800; color:#4c1d95;">Calculating...</span>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:0.25rem; text-align:right;">
+                    <span style="font-size:0.75rem; font-weight:800; text-transform:uppercase; color:var(--text-muted);">Countdown</span>
+                    <span id="scheduleCountdownText" style="font-size:1rem; font-weight:800; color:#7c3aed;">N/A</span>
+                </div>
+            </div>
+
+            <div style="display:flex; justify-content:flex-end; gap:0.75rem; margin-top:1.25rem;">
+                <button class="btn-action" style="background:#e9e5de; color:#1c1917; box-shadow:none;" onclick="toggleScheduleCard()">Cancel</button>
+                <button id="btn-save-schedule" class="btn-action btn-schedule" onclick="submitScheduleConfig()">💾 Save & Activate Schedule</button>
             </div>
         </div>
     </div>
