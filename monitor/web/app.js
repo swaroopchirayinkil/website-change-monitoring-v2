@@ -47,16 +47,109 @@ async function loadScheduleConfig() {
             if (enableCb) enableCb.checked = !!cfg.enabled;
             if (statusTxt) statusTxt.innerText = cfg.enabled ? '🟢 Active' : '⚪ Disabled';
             if (freqSel) freqSel.value = cfg.frequency || 'daily';
-            if (hourSel) hourSel.value = cfg.hour || 9;
-            if (minSel) minSel.value = cfg.minute !== undefined ? cfg.minute : 0;
+            if (hourSel) hourSel.value = String(cfg.hour || 9).padStart(2, '0');
+            if (minSel) minSel.value = String(cfg.minute !== undefined ? cfg.minute : 0).padStart(2, '0');
             if (ampmSel) ampmSel.value = cfg.ampm || 'AM';
             if (tzSel) tzSel.value = cfg.timezone || 'UTC';
             if (nextTxt) nextTxt.innerText = cfg.next_run || 'N/A';
             if (countTxt) countTxt.innerText = cfg.countdown_display || 'N/A';
 
             handleFrequencyChange();
+            initWheelPickers();
         }
     } catch(e) {}
+}
+
+function initWheelPickers() {
+    const hourPopup = document.getElementById('hourWheelPopup');
+    const minutePopup = document.getElementById('minuteWheelPopup');
+    if (hourPopup && hourPopup.children.length === 0) {
+        for (let h = 1; h <= 12; h++) {
+            const val = String(h).padStart(2, '0');
+            const item = document.createElement('div');
+            item.className = 'wheel-item';
+            item.innerText = val;
+            item.onclick = function(e) {
+                e.stopPropagation();
+                document.getElementById('scheduleHourSelect').value = val;
+                hourPopup.classList.add('hidden');
+            };
+            hourPopup.appendChild(item);
+        }
+    }
+    if (minutePopup && minutePopup.children.length === 0) {
+        for (let m = 0; m < 60; m++) {
+            const val = String(m).padStart(2, '0');
+            const item = document.createElement('div');
+            item.className = 'wheel-item';
+            item.innerText = val;
+            item.onclick = function(e) {
+                e.stopPropagation();
+                document.getElementById('scheduleMinuteSelect').value = val;
+                minutePopup.classList.add('hidden');
+            };
+            minutePopup.appendChild(item);
+        }
+    }
+
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('#hourWheelColumn')) {
+            const hp = document.getElementById('hourWheelPopup');
+            if (hp) hp.classList.add('hidden');
+        }
+        if (!e.target.closest('#minuteWheelColumn')) {
+            const mp = document.getElementById('minuteWheelPopup');
+            if (mp) mp.classList.add('hidden');
+        }
+    });
+}
+
+function toggleWheelPopup(popupId) {
+    initWheelPickers();
+    const popup = document.getElementById(popupId);
+    if (popup) {
+        const isHidden = popup.classList.contains('hidden');
+        document.querySelectorAll('.wheel-popup').forEach(p => p.classList.add('hidden'));
+        if (isHidden) popup.classList.remove('hidden');
+    }
+}
+
+function stepHour(delta) {
+    const el = document.getElementById('scheduleHourSelect');
+    if (!el) return;
+    let cur = parseInt(el.value || '9', 10);
+    cur += delta;
+    if (cur > 12) cur = 1;
+    if (cur < 1) cur = 12;
+    el.value = String(cur).padStart(2, '0');
+}
+
+function stepMinute(delta) {
+    const el = document.getElementById('scheduleMinuteSelect');
+    if (!el) return;
+    let cur = parseInt(el.value || '0', 10);
+    cur += delta;
+    if (cur > 59) cur = 0;
+    if (cur < 0) cur = 59;
+    el.value = String(cur).padStart(2, '0');
+}
+
+function handleWheelScroll(event, type) {
+    event.preventDefault();
+    const delta = event.deltaY < 0 ? 1 : -1;
+    if (type === 'hour') {
+        stepHour(delta);
+    } else if (type === 'minute') {
+        stepMinute(delta);
+    }
+}
+
+function formatWheelInput(input, min, max) {
+    let val = parseInt(input.value || '0', 10);
+    if (isNaN(val)) val = min;
+    if (val < min) val = min;
+    if (val > max) val = max;
+    input.value = String(val).padStart(2, '0');
 }
 
 function handleFrequencyChange() {

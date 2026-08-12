@@ -105,33 +105,30 @@
                     </select>
                 </div>
                 <div id="scheduleTimeGroup" class="schedule-field">
-                    <label>Execution Time (12-Hour Format)</label>
-                    <div style="display:flex; gap:0.4rem; align-items:center;">
-                        <select id="scheduleHourSelect" class="control-select" style="min-width:70px;">
-                            <option value="1">01</option>
-                            <option value="2">02</option>
-                            <option value="3">03</option>
-                            <option value="4">04</option>
-                            <option value="5">05</option>
-                            <option value="6">06</option>
-                            <option value="7">07</option>
-                            <option value="8">08</option>
-                            <option value="9" selected>09</option>
-                            <option value="10">10</option>
-                            <option value="11">11</option>
-                            <option value="12">12</option>
-                        </select>
-                        <span style="font-weight:800; font-size:1.1rem;">:</span>
-                        <select id="scheduleMinuteSelect" class="control-select" style="min-width:70px;">
-                            <option value="0" selected>00</option>
-                            <option value="15">15</option>
-                            <option value="30">30</option>
-                            <option value="45">45</option>
-                        </select>
-                        <select id="scheduleAmpmSelect" class="control-select" style="min-width:75px;">
-                            <option value="AM" selected>AM</option>
-                            <option value="PM">PM</option>
-                        </select>
+                    <label>Execution Time (Wheel Scroll & Direct Type)</label>
+                    <div class="wheel-time-picker">
+                        <div class="wheel-column" id="hourWheelColumn">
+                            <button type="button" class="wheel-step-btn" onclick="stepHour(1)">▲</button>
+                            <input type="text" id="scheduleHourSelect" class="wheel-picker-input" value="09" maxlength="2" onblur="formatWheelInput(this, 1, 12)" onwheel="handleWheelScroll(event, 'hour')" onclick="toggleWheelPopup('hourWheelPopup')" placeholder="HH">
+                            <button type="button" class="wheel-step-btn" onclick="stepHour(-1)">▼</button>
+                            <div class="wheel-popup hidden" id="hourWheelPopup"></div>
+                        </div>
+
+                        <span class="wheel-separator">:</span>
+
+                        <div class="wheel-column" id="minuteWheelColumn">
+                            <button type="button" class="wheel-step-btn" onclick="stepMinute(1)">▲</button>
+                            <input type="text" id="scheduleMinuteSelect" class="wheel-picker-input" value="00" maxlength="2" onblur="formatWheelInput(this, 0, 59)" onwheel="handleWheelScroll(event, 'minute')" onclick="toggleWheelPopup('minuteWheelPopup')" placeholder="MM">
+                            <button type="button" class="wheel-step-btn" onclick="stepMinute(-1)">▼</button>
+                            <div class="wheel-popup hidden" id="minuteWheelPopup"></div>
+                        </div>
+
+                        <div class="wheel-column">
+                            <select id="scheduleAmpmSelect" class="control-select" style="min-width:75px; height:42px; font-weight:800;">
+                                <option value="AM" selected>AM</option>
+                                <option value="PM">PM</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
                 <div class="schedule-field">
