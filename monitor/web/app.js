@@ -356,6 +356,11 @@ async function checkServerStatus() {
     return false;
 }
 
+// Automatically check server status & background tasks every 3 seconds
+if (typeof window !== 'undefined') {
+    setInterval(checkServerStatus, 3000);
+}
+
 async function triggerTask(action) {
     if (!isServerConnected) {
         alert("The backend web server is not currently running.\n\nTo control scans from this dashboard, start the server in your terminal:\n\npython visual_change_detector.py serve");
