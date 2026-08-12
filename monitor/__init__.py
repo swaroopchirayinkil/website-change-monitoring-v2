@@ -1,4 +1,4 @@
 """
-Visual Change Monitoring Package
+WebGlancer Package
 """
 __version__ = "2.0.0"

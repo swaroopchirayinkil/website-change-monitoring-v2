@@ -3,7 +3,7 @@
 """
 visual_change_detector.py
 -------------------------
-Lightweight CLI dispatcher for the Visual Change Monitoring Suite.
+Lightweight CLI dispatcher for WebGlancer.
 Leverages the modular `monitor` package for high-speed Playwright browser rendering,
 Pillow visual diffing, REST API server handling, and web dashboard generation.
 """

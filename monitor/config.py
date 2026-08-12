@@ -2,7 +2,7 @@
 """
 monitor/config.py
 -----------------
-Centralized paths and constants for the Visual Change Monitoring Suite.
+Centralized paths and constants for WebGlancer.
 """
 
 from pathlib import Path

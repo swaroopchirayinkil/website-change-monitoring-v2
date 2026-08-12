@@ -2,7 +2,7 @@
 """
 monitor/server.py
 -----------------
-HTTP Server Handler and REST API routing for the Visual Change Monitoring Suite.
+HTTP Server Handler and REST API routing for WebGlancer.
 """
 
 import http.server
@@ -238,7 +238,7 @@ def run_server(host: str = "0.0.0.0", port: int = 8000, open_browser: bool = Tru
 
     url = f"http://localhost:{port}/report.html"
     print("\n" + "="*70)
-    print(" 🚀 VISUAL CHANGE MONITORING REST API SERVER STARTED")
+    print(" 🚀 WEBGLANCER REST API SERVER STARTED")
     print("="*70)
     print(f" 🌐 Web Dashboard URL:  {url}")
     print(f" 📡 Local Server Address: http://{host}:{port}")

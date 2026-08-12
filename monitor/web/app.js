@@ -1,4 +1,4 @@
-/* app.js - Visual Change Monitoring Suite Frontend Controller */
+/* app.js - WebGlancer Frontend Controller */
 
 let isServerConnected = false;
 let pollingInterval = null;
