@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Visual Change Monitoring Suite - Dashboard</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <title>WebGlancer - Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div class="header">
-        <h1>📸 Visual Change Monitoring Suite</h1>
-        <p>Headless Playwright Chromium Engine &amp; Pixel-by-Pixel Diff Heatmap Inspector | Execution: {now_str}</p>
+        <h1>📸 WebGlancer</h1>
+        <p>Execution: {now_str}</p>
     </div>
 
     <!-- Executive Task Control Panel -->
@@ -27,7 +27,7 @@
             <div class="control-group">
                 <label for="speedSelect">Resource Usage / Speed Selector</label>
                 <select id="speedSelect" class="control-select">
-                    <option value="low" selected>🐢 Low Resource Usage (Default: 1 Worker Thread)</option>
+                    <option value="low" selected>📦 Low Resource Usage (Default: 1 Worker Thread)</option>
                     <option value="medium">⚡ Medium Speed (4 Worker Threads)</option>
                     <option value="high">🚀 High Speed (8 Worker Threads)</option>
                 </select>
@@ -41,6 +41,9 @@
                 </button>
                 <button id="btn-toggle-add-domain" class="btn-action btn-add-domain button-rh" data-rh-target="addDomainCard" onclick="toggleAddDomainCard()">
                     ➕ Add Domain(s)
+                </button>
+                <button id="btn-toggle-schedule" class="btn-action btn-schedule button-rh" data-rh-target="scheduleCard" onclick="toggleScheduleCard()">
+                    ⏰ Scheduler
                 </button>
                 <button id="btn-toggle-history" class="btn-action btn-history button-rh" data-rh-target="historyCard" onclick="toggleHistoryCard()">
                     📜 View Historical Reports (Last 5 Days)
@@ -63,8 +66,92 @@
                 📸 Automatically capture initial baseline screenshot for newly added domain(s)
             </label>
             <div style="display:flex; gap:0.5rem;">
-                <button class="btn-action" style="background:#334155; color:#fff;" onclick="toggleAddDomainCard()">Cancel</button>
+                <button class="btn-action" style="background:#e9e5de; color:#1c1917; box-shadow:none;" onclick="toggleAddDomainCard()">Cancel</button>
                 <button id="btn-submit-add-domain" class="btn-action btn-add-domain" onclick="submitAddDomains()">Add to Monitoring</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Automated Live Scan Scheduler Expandable Card -->
+    <div id="scheduleCard" class="schedule-card hidden">
+        <div class="schedule-header">
+            <div>
+                <h3 style="display:flex; align-items:center; gap:0.5rem; color:#1c1917; font-size:1.15rem; font-weight:800;">
+                    ⏰ Automated Live Scan Scheduler
+                </h3>
+                <p style="font-size:0.85rem; color:var(--text-muted); margin-top:0.25rem;">
+                    Configure automated periodic live scans with specific times, AM/PM, timezone selection, and background execution.
+                </p>
+            </div>
+            <button onclick="toggleScheduleCard()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1.2rem;">✖</button>
+        </div>
+        <div class="schedule-body">
+            <div class="schedule-form-grid">
+                <div class="schedule-field">
+                    <label>Schedule Status</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="scheduleEnableCheckbox">
+                        <span class="slider"></span>
+                        <span id="scheduleStatusText" style="font-size:0.85rem; font-weight:700; margin-left:0.5rem;">Disabled</span>
+                    </label>
+                </div>
+                <div class="schedule-field">
+                    <label for="scheduleFrequencySelect">Frequency Mode</label>
+                    <select id="scheduleFrequencySelect" class="control-select" onchange="handleFrequencyChange()">
+                        <option value="daily" selected>📅 Daily at Specific Time</option>
+                        <option value="1h">⏱️ Every 1 Hour</option>
+                        <option value="6h">⏱️ Every 6 Hours</option>
+                        <option value="12h">⏱️ Every 12 Hours</option>
+                    </select>
+                </div>
+                <div id="scheduleTimeGroup" class="schedule-field">
+                    <label for="scheduleHourSelect">Execution Time</label>
+                    <div class="wheel-time-picker">
+                        <div class="wheel-column" id="hourWheelColumn">
+                            <input type="text" id="scheduleHourSelect" class="wheel-picker-input" value="09" readonly onwheel="handleWheelScroll(event, 'hour')" onclick="toggleWheelPopup('hourWheelPopup')" placeholder="HH" title="Scroll mouse wheel or click to select hour">
+                            <div class="wheel-popup hidden" id="hourWheelPopup"></div>
+                        </div>
+
+                        <span class="wheel-separator">:</span>
+
+                        <div class="wheel-column" id="minuteWheelColumn">
+                            <input type="text" id="scheduleMinuteSelect" class="wheel-picker-input" value="00" readonly onwheel="handleWheelScroll(event, 'minute')" onclick="toggleWheelPopup('minuteWheelPopup')" placeholder="MM" title="Scroll mouse wheel or click to select minute">
+                            <div class="wheel-popup hidden" id="minuteWheelPopup"></div>
+                        </div>
+
+                        <div class="wheel-column">
+                            <select id="scheduleAmpmSelect" class="control-select ampm-picker">
+                                <option value="AM" selected>AM</option>
+                                <option value="PM">PM</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="schedule-field">
+                    <label for="scheduleTimezoneSelect">Timezone Selection</label>
+                    <select id="scheduleTimezoneSelect" class="control-select">
+                        <option value="UTC">🌍 UTC (Universal Time)</option>
+                        <option value="Asia/Kolkata">🇮🇳 Asia/Kolkata (IST - UTC+5:30)</option>
+                        <option value="America/New_York">🇺🇸 America/New_York (EST/EDT)</option>
+                        <option value="America/Los_Angeles">🇺🇸 America/Los_Angeles (PST/PDT)</option>
+                        <option value="Europe/London">🇬🇧 Europe/London (GMT/BST)</option>
+                        <option value="Europe/Paris">🇫🇷 Europe/Paris (CET/CEST)</option>
+                        <option value="Asia/Tokyo">🇯🇵 Asia/Tokyo (JST)</option>
+                        <option value="Australia/Sydney">🇦🇺 Australia/Sydney (AEST)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="schedule-banner">
+                <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                    <span style="font-size:0.75rem; font-weight:800; text-transform:uppercase; color:var(--text-muted);">Next Scheduled Execution</span>
+                    <span id="scheduleNextRunText" style="font-size:1rem; font-weight:800; color:#4c1d95;">Calculating...</span>
+                </div>
+            </div>
+
+            <div style="display:flex; justify-content:flex-end; gap:0.75rem; margin-top:1.25rem;">
+                <button class="btn-action" style="background:#e9e5de; color:#1c1917; box-shadow:none;" onclick="toggleScheduleCard()">Cancel</button>
+                <button id="btn-save-schedule" class="btn-action btn-schedule" onclick="submitScheduleConfig()">💾 Save & Activate Schedule</button>
             </div>
         </div>
     </div>
@@ -73,7 +160,7 @@
     <div id="historyCard" class="history-card hidden">
         <div class="history-header">
             <div>
-                <h3 style="display:flex; align-items:center; gap:0.5rem; color:#fff; font-size:1.15rem; font-weight:700;">
+                <h3 style="display:flex; align-items:center; gap:0.5rem; color:#1c1917; font-size:1.15rem; font-weight:800;">
                     📜 Historical Reports Archive (5-Day Retention Window)
                 </h3>
                 <p style="font-size:0.85rem; color:var(--text-muted); margin-top:0.25rem;">
@@ -108,21 +195,21 @@
 
     <!-- Executive Summary Cards -->
     <div class="summary-cards">
-        <div class="card">
+        <div class="card card-total">
             <div class="title">Total Sites Scanned</div>
             <div class="value">{total}</div>
         </div>
-        <div class="card" style="border-color: rgba(244, 63, 94, 0.4);">
-            <div class="title" style="color: var(--accent-changed);">Visual Changes Detected</div>
-            <div class="value" style="color: var(--accent-changed);">{changed}</div>
+        <div class="card card-changed">
+            <div class="title">Visual Changes Detected</div>
+            <div class="value">{changed}</div>
         </div>
-        <div class="card" style="border-color: rgba(16, 185, 129, 0.4);">
-            <div class="title" style="color: var(--accent-unchanged);">Unchanged Sites</div>
-            <div class="value" style="color: var(--accent-unchanged);">{unchanged}</div>
+        <div class="card card-unchanged">
+            <div class="title">Unchanged Sites</div>
+            <div class="value">{unchanged}</div>
         </div>
-        <div class="card" style="border-color: rgba(234, 179, 8, 0.4);">
-            <div class="title" style="color: var(--accent-failed);">Failed / Unreachable</div>
-            <div class="value" style="color: var(--accent-failed);">{failed}</div>
+        <div class="card card-failed">
+            <div class="title">Failed / Unreachable</div>
+            <div class="value">{failed}</div>
         </div>
     </div>
 
@@ -131,7 +218,7 @@
         <div class="summary-table-header">
             <h2>📊 Executive Status Matrix</h2>
             <div class="table-filter-bar">
-                <span style="font-size:0.8rem; color:var(--text-muted); font-weight:600; margin-right:0.25rem;">Filter by Status:</span>
+                <span style="font-size:0.8rem; color:var(--text-muted); font-weight:700; margin-right:0.25rem;">Filter by Status:</span>
                 <span class="filter-chip active" onclick="setStatusFilter('ALL', this)">ALL ({total})</span>
                 <span class="filter-chip" onclick="setStatusFilter('CHANGED', this)">CHANGED ({changed})</span>
                 <span class="filter-chip" onclick="setStatusFilter('UNCHANGED', this)">UNCHANGED ({unchanged})</span>

@@ -1,4 +1,4 @@
-/* app.js - Visual Change Monitoring Suite Frontend Controller */
+/* app.js - WebGlancer Frontend Controller */
 
 let isServerConnected = false;
 let pollingInterval = null;
@@ -22,6 +22,191 @@ function toggleRHCard(cardId, onShowCallback) {
 
 function toggleHistoryCard() {
     toggleRHCard('historyCard', loadHistoryReports);
+}
+
+function toggleScheduleCard() {
+    toggleRHCard('scheduleCard', loadScheduleConfig);
+}
+
+async function loadScheduleConfig() {
+    if (!isServerConnected) return;
+    try {
+        const resp = await fetch('/api/schedule');
+        if (resp.ok) {
+            const cfg = await resp.json();
+            const enableCb = document.getElementById('scheduleEnableCheckbox');
+            const statusTxt = document.getElementById('scheduleStatusText');
+            const freqSel = document.getElementById('scheduleFrequencySelect');
+            const hourSel = document.getElementById('scheduleHourSelect');
+            const minSel = document.getElementById('scheduleMinuteSelect');
+            const ampmSel = document.getElementById('scheduleAmpmSelect');
+            const tzSel = document.getElementById('scheduleTimezoneSelect');
+            const nextTxt = document.getElementById('scheduleNextRunText');
+
+            if (enableCb) enableCb.checked = !!cfg.enabled;
+            if (statusTxt) statusTxt.innerText = cfg.enabled ? '🟢 Active' : '⚪ Disabled';
+            if (freqSel) freqSel.value = cfg.frequency || 'daily';
+            if (hourSel) hourSel.value = String(cfg.hour || 9).padStart(2, '0');
+            if (minSel) minSel.value = String(cfg.minute !== undefined ? cfg.minute : 0).padStart(2, '0');
+            if (ampmSel) ampmSel.value = cfg.ampm || 'AM';
+            if (tzSel) tzSel.value = cfg.timezone || 'UTC';
+            if (nextTxt) nextTxt.innerText = cfg.next_run || 'N/A';
+
+            handleFrequencyChange();
+            initWheelPickers();
+        }
+    } catch(e) {}
+}
+
+function initWheelPickers() {
+    const hourPopup = document.getElementById('hourWheelPopup');
+    const minutePopup = document.getElementById('minuteWheelPopup');
+    if (hourPopup && hourPopup.children.length === 0) {
+        for (let h = 1; h <= 12; h++) {
+            const val = String(h).padStart(2, '0');
+            const item = document.createElement('div');
+            item.className = 'wheel-item';
+            item.innerText = val;
+            item.onclick = function(e) {
+                e.stopPropagation();
+                document.getElementById('scheduleHourSelect').value = val;
+                hourPopup.classList.add('hidden');
+            };
+            hourPopup.appendChild(item);
+        }
+    }
+    if (minutePopup && minutePopup.children.length === 0) {
+        for (let m = 0; m < 60; m++) {
+            const val = String(m).padStart(2, '0');
+            const item = document.createElement('div');
+            item.className = 'wheel-item';
+            item.innerText = val;
+            item.onclick = function(e) {
+                e.stopPropagation();
+                document.getElementById('scheduleMinuteSelect').value = val;
+                minutePopup.classList.add('hidden');
+            };
+            minutePopup.appendChild(item);
+        }
+    }
+
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('#hourWheelColumn')) {
+            const hp = document.getElementById('hourWheelPopup');
+            if (hp) hp.classList.add('hidden');
+        }
+        if (!e.target.closest('#minuteWheelColumn')) {
+            const mp = document.getElementById('minuteWheelPopup');
+            if (mp) mp.classList.add('hidden');
+        }
+    });
+}
+
+function toggleWheelPopup(popupId) {
+    initWheelPickers();
+    const popup = document.getElementById(popupId);
+    if (popup) {
+        const isHidden = popup.classList.contains('hidden');
+        document.querySelectorAll('.wheel-popup').forEach(p => p.classList.add('hidden'));
+        if (isHidden) popup.classList.remove('hidden');
+    }
+}
+
+function stepHour(delta) {
+    const el = document.getElementById('scheduleHourSelect');
+    if (!el) return;
+    let cur = parseInt(el.value || '9', 10);
+    cur += delta;
+    if (cur > 12) cur = 1;
+    if (cur < 1) cur = 12;
+    el.value = String(cur).padStart(2, '0');
+}
+
+function stepMinute(delta) {
+    const el = document.getElementById('scheduleMinuteSelect');
+    if (!el) return;
+    let cur = parseInt(el.value || '0', 10);
+    cur += delta;
+    if (cur > 59) cur = 0;
+    if (cur < 0) cur = 59;
+    el.value = String(cur).padStart(2, '0');
+}
+
+function handleWheelScroll(event, type) {
+    event.preventDefault();
+    const delta = event.deltaY < 0 ? 1 : -1;
+    if (type === 'hour') {
+        stepHour(delta);
+    } else if (type === 'minute') {
+        stepMinute(delta);
+    }
+}
+
+function formatWheelInput(input, min, max) {
+    let val = parseInt(input.value || '0', 10);
+    if (isNaN(val)) val = min;
+    if (val < min) val = min;
+    if (val > max) val = max;
+    input.value = String(val).padStart(2, '0');
+}
+
+function handleFrequencyChange() {
+    const freqSel = document.getElementById('scheduleFrequencySelect');
+    const timeGrp = document.getElementById('scheduleTimeGroup');
+    if (freqSel && timeGrp) {
+        if (freqSel.value === 'daily') {
+            timeGrp.style.display = 'flex';
+        } else {
+            timeGrp.style.display = 'none';
+        }
+    }
+}
+
+async function submitScheduleConfig() {
+    if (!isServerConnected) {
+        alert("The backend web server is not currently running.\n\nTo manage schedules from this dashboard, start the server in your terminal:\n\npython visual_change_detector.py serve");
+        return;
+    }
+
+    const enabled = document.getElementById('scheduleEnableCheckbox')?.checked || false;
+    const frequency = document.getElementById('scheduleFrequencySelect')?.value || 'daily';
+    const hour = parseInt(document.getElementById('scheduleHourSelect')?.value || '9', 10);
+    const minute = parseInt(document.getElementById('scheduleMinuteSelect')?.value || '0', 10);
+    const ampm = document.getElementById('scheduleAmpmSelect')?.value || 'AM';
+    const timezone = document.getElementById('scheduleTimezoneSelect')?.value || 'UTC';
+    const speedSelect = document.getElementById('speedSelect');
+    const speed = speedSelect ? speedSelect.value : 'low';
+
+    const btnSave = document.getElementById('btn-save-schedule');
+    if (btnSave) btnSave.disabled = true;
+
+    try {
+        const resp = await fetch('/api/schedule', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                enabled: enabled,
+                frequency: frequency,
+                hour: hour,
+                minute: minute,
+                ampm: ampm,
+                timezone: timezone,
+                speed: speed
+            })
+        });
+
+        const res = await resp.json();
+        if (res.success) {
+            alert(`✅ Schedule ${enabled ? 'Enabled' : 'Disabled'} and saved successfully!\n\nNext Run: ${res.schedule.next_run}`);
+            loadScheduleConfig();
+        } else {
+            alert('Failed to save schedule configuration.');
+        }
+    } catch(e) {
+        alert('Error connecting to server to save schedule.');
+    } finally {
+        if (btnSave) btnSave.disabled = false;
+    }
 }
 
 async function loadHistoryReports() {
@@ -49,7 +234,7 @@ function renderHistoryGrid(reports) {
         <div class="history-item-card ${r.is_today ? 'is-today' : ''}">
             <div>
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
-                    <span style="font-weight:700; font-size:1rem; color:#fff;">🗓️ ${r.formatted_date}</span>
+                    <span style="font-weight:800; font-size:1rem; color:#1c1917;">🗓️ ${r.formatted_date}</span>
                     <span class="history-card-badge ${r.is_today ? 'badge-today' : 'badge-archive'}">${r.is_today ? 'Today' : 'Archive'}</span>
                 </div>
                 <div style="font-size:0.8rem; color:var(--text-muted); margin-top:0.3rem;">
@@ -166,6 +351,11 @@ async function checkServerStatus() {
         badge.innerHTML = '⚪ Server Offline (CLI Mode)';
     }
     return false;
+}
+
+// Automatically check server status & background tasks every 3 seconds
+if (typeof window !== 'undefined') {
+    setInterval(checkServerStatus, 3000);
 }
 
 async function triggerTask(action) {
@@ -374,11 +564,11 @@ function renderSummaryTable() {
 
         return `
             <tr>
-                <td style="color:var(--text-muted); font-weight:600;">#${item._originalIndex}</td>
-                <td style="font-weight:600;"><a href="${item.url}" target="_blank" style="color:var(--text-primary); text-decoration:none;">${item.url}</a></td>
+                <td style="color:var(--text-muted); font-weight:700;">#${item._originalIndex}</td>
+                <td style="font-weight:700;"><a href="${item.url}" target="_blank" style="color:var(--text-primary); text-decoration:none;">${item.url}</a></td>
                 <td><span class="badge badge-${stClass}">${item.status}</span></td>
-                <td style="font-weight:700; color:${item.percentage > 0 ? 'var(--accent-changed)' : 'var(--text-primary)'};">${pctDisplay}</td>
-                <td style="color:var(--text-muted);">${pxDisplay}</td>
+                <td style="font-weight:800; color:${item.percentage > 0 ? 'var(--accent-changed)' : 'var(--text-primary)'};">${pctDisplay}</td>
+                <td style="color:var(--text-muted); font-weight:600;">${pxDisplay}</td>
                 <td>
                     <div class="table-action-cell">
                         <button class="btn-sm-action btn-sm-update" onclick="triggerSingleDomainTask('update', '${safeUrl}')" title="Update baseline screenshot for this site">📸 Baseline</button>
@@ -408,9 +598,9 @@ function renderSnapshotBlocks() {
                 <div class="url-header">
                     <div class="url-title-wrapper">
                         <span class="badge badge-${stClass}">${item.status}</span>
-                        <a href="${item.url}" target="_blank" style="font-size:1.1rem; font-weight:700; color:#fff; text-decoration:none;">${item.url}</a>
-                        <span style="font-size:0.85rem; color:var(--text-muted);">| Diff: <strong style="color:#fff;">${pctDisplay}</strong> (${pxDisplay} px changed)</span>
-                        ${item.baseline_last_updated ? `<span style="font-size:0.8rem; color:var(--accent-blue); background:rgba(56,189,248,0.1); padding:0.2rem 0.6rem; border-radius:12px; border:1px solid rgba(56,189,248,0.3);">🗓️ Baseline: ${item.baseline_last_updated}</span>` : ''}
+                        <a href="${item.url}" target="_blank" style="font-size:1.1rem; font-weight:800; color:#1c1917; text-decoration:none;">${item.url}</a>
+                        <span style="font-size:0.85rem; color:var(--text-muted);">| Diff: <strong style="color:#1c1917;">${pctDisplay}</strong> (${pxDisplay} px changed)</span>
+                        ${item.baseline_last_updated ? `<span style="font-size:0.8rem; color:#6b21a8; background:#e9d5ff; padding:0.2rem 0.6rem; border-radius:12px; border:1px solid #c084fc; font-weight:700;">🗓️ Baseline: ${item.baseline_last_updated}</span>` : ''}
                     </div>
                     <div class="domain-action-buttons">
                         <button class="btn-domain-action btn-domain-update" onclick="triggerSingleDomainTask('update', '${safeUrl}')" title="Update baseline screenshot for this site">📸 Baseline</button>
@@ -418,7 +608,7 @@ function renderSnapshotBlocks() {
                         <button class="btn-domain-action btn-domain-remove" onclick="confirmAndRemoveDomain('${safeUrl}')" title="Remove domain from target list and purge cache">🗑️ Remove Domain</button>
                     </div>
                 </div>
-                ${item.error ? `<div style="padding:1.5rem; color:var(--accent-failed); background:rgba(234, 179, 8, 0.05); font-weight:600;">⚠️ Error: ${item.error}</div>` : `
+                ${item.error ? `<div style="padding:1.5rem; color:var(--accent-failed); background:#fffbeb; font-weight:600;">⚠️ Error: ${item.error}</div>` : `
                     <div class="image-grid">
                         <div class="img-container">
                             <div class="img-title">Reference Baseline</div>
