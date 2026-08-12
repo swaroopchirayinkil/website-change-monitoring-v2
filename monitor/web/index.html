@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visual Change Monitoring Suite - Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="header">
+        <h1>📸 Visual Change Monitoring Suite</h1>
+        <p>Headless Playwright Chromium Engine &amp; Pixel-by-Pixel Diff Heatmap Inspector | Execution: {now_str}</p>
+    </div>
+
+    <!-- Executive Task Control Panel -->
+    <div class="control-panel-card">
+        <div class="control-panel-header">
+            <div class="panel-title">
+                <h2>⚡ Executive Task Controller</h2>
+            </div>
+            <div id="serverStatusBadge" class="server-badge offline">
+                Checking server status...
+            </div>
+        </div>
+        <div class="control-panel-body">
+            <div class="control-group">
+                <label for="speedSelect">Resource Usage / Speed Selector</label>
+                <select id="speedSelect" class="control-select">
+                    <option value="low" selected>🐢 Low Resource Usage (Default: 1 Worker Thread)</option>
+                    <option value="medium">⚡ Medium Speed (4 Worker Threads)</option>
+                    <option value="high">🚀 High Speed (8 Worker Threads)</option>
+                </select>
+            </div>
+            <div class="button-group">
+                <button id="btn-update-baseline" class="btn-action btn-update-baseline" onclick="triggerTask('update')">
+                    📸 Update Baselines
+                </button>
+                <button id="btn-live-check" class="btn-action btn-live-check" onclick="triggerTask('check')">
+                    🔍 Run Live Visual Check
+                </button>
+                <button id="btn-toggle-add-domain" class="btn-action btn-add-domain button-rh" data-rh-target="addDomainCard" onclick="toggleAddDomainCard()">
+                    ➕ Add Domain(s)
+                </button>
+                <button id="btn-toggle-history" class="btn-action btn-history button-rh" data-rh-target="historyCard" onclick="toggleHistoryCard()">
+                    📜 View Historical Reports (Last 5 Days)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Domain Expandable Card -->
+    <div id="addDomainCard" class="add-domain-card hidden">
+        <div class="add-domain-header">
+            <h3>➕ Add New Domain(s) for Monitoring</h3>
+            <button onclick="toggleAddDomainCard()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1.2rem;">✖</button>
+        </div>
+        <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:0.75rem;">Enter one or multiple target domain URLs below (e.g. <code>https://example.com</code>, one per line):</p>
+        <textarea id="newDomainsTextarea" class="add-domain-textarea" placeholder="https://example.com&#10;https://news.ycombinator.com"></textarea>
+        <div class="add-domain-actions">
+            <label class="checkbox-label">
+                <input type="checkbox" id="autoBaselineCheckbox" checked>
+                📸 Automatically capture initial baseline screenshot for newly added domain(s)
+            </label>
+            <div style="display:flex; gap:0.5rem;">
+                <button class="btn-action" style="background:#334155; color:#fff;" onclick="toggleAddDomainCard()">Cancel</button>
+                <button id="btn-submit-add-domain" class="btn-action btn-add-domain" onclick="submitAddDomains()">Add to Monitoring</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Historical Reports Expandable Card -->
+    <div id="historyCard" class="history-card hidden">
+        <div class="history-header">
+            <div>
+                <h3 style="display:flex; align-items:center; gap:0.5rem; color:#fff; font-size:1.15rem; font-weight:700;">
+                    📜 Historical Reports Archive (5-Day Retention Window)
+                </h3>
+                <p style="font-size:0.85rem; color:var(--text-muted); margin-top:0.25rem;">
+                    The suite automatically retains 1 report per calendar day for up to 5 days. Click <strong>View Report</strong> below to inspect any previous execution report.
+                </p>
+            </div>
+            <button onclick="toggleHistoryCard()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1.2rem;">✖</button>
+        </div>
+        <div id="historyGrid" class="history-grid">
+            <!-- Dynamically populated -->
+        </div>
+    </div>
+
+    <!-- Live Task Progress Banner -->
+    <div id="progressContainer" class="progress-banner hidden">
+        <div class="progress-header">
+            <div class="progress-title">
+                <span class="spinner"></span>
+                <span id="progressTaskTitle">Executing Task...</span>
+            </div>
+            <div id="progressSpeedBadge" class="speed-badge">Low Resource (1 Worker)</div>
+        </div>
+        <div class="progress-bar-wrapper">
+            <div id="progressBarFill" class="progress-bar-fill" style="width: 0%;"></div>
+        </div>
+        <div class="progress-details">
+            <span id="progressPercentageText">0% Completed (0/0)</span>
+            <span id="progressActiveUrl">Initializing...</span>
+        </div>
+        <div id="progressLogBox" class="progress-log-box"></div>
+    </div>
+
+    <!-- Executive Summary Cards -->
+    <div class="summary-cards">
+        <div class="card">
+            <div class="title">Total Sites Scanned</div>
+            <div class="value">{total}</div>
+        </div>
+        <div class="card" style="border-color: rgba(244, 63, 94, 0.4);">
+            <div class="title" style="color: var(--accent-changed);">Visual Changes Detected</div>
+            <div class="value" style="color: var(--accent-changed);">{changed}</div>
+        </div>
+        <div class="card" style="border-color: rgba(16, 185, 129, 0.4);">
+            <div class="title" style="color: var(--accent-unchanged);">Unchanged Sites</div>
+            <div class="value" style="color: var(--accent-unchanged);">{unchanged}</div>
+        </div>
+        <div class="card" style="border-color: rgba(234, 179, 8, 0.4);">
+            <div class="title" style="color: var(--accent-failed);">Failed / Unreachable</div>
+            <div class="value" style="color: var(--accent-failed);">{failed}</div>
+        </div>
+    </div>
+
+    <!-- Executive Summary Table Card -->
+    <div class="summary-table-card">
+        <div class="summary-table-header">
+            <h2>📊 Executive Status Matrix</h2>
+            <div class="table-filter-bar">
+                <span style="font-size:0.8rem; color:var(--text-muted); font-weight:600; margin-right:0.25rem;">Filter by Status:</span>
+                <span class="filter-chip active" onclick="setStatusFilter('ALL', this)">ALL ({total})</span>
+                <span class="filter-chip" onclick="setStatusFilter('CHANGED', this)">CHANGED ({changed})</span>
+                <span class="filter-chip" onclick="setStatusFilter('UNCHANGED', this)">UNCHANGED ({unchanged})</span>
+                <span class="filter-chip" onclick="setStatusFilter('FAILED', this)">FAILED ({failed})</span>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="summary-table">
+                <thead>
+                    <tr>
+                        <th id="th-index" class="sortable active" onclick="handleSort('index')"># <span id="sort-icon-index" class="sort-icon">▲</span></th>
+                        <th id="th-url" class="sortable" onclick="handleSort('url')">Target Domain / URL <span id="sort-icon-url" class="sort-icon">↕</span></th>
+                        <th id="th-status" class="sortable" onclick="handleSort('status')">Status <span id="sort-icon-status" class="sort-icon">↕</span></th>
+                        <th id="th-percentage" class="sortable" onclick="handleSort('percentage')">Visual Mismatch % <span id="sort-icon-percentage" class="sort-icon">↕</span></th>
+                        <th id="th-changed_pixels" class="sortable" onclick="handleSort('changed_pixels')">Changed Pixels <span id="sort-icon-changed_pixels" class="sort-icon">↕</span></th>
+                        <th>Quick Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="summaryTableBody">
+                    <!-- Populated dynamically via JS -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="app">
+        <!-- Snapshot blocks populated dynamically via JS -->
+    </div>
+
+    <!-- Floating Smooth Scroll To Top Button -->
+    <button id="scrollToTopBtn" class="scroll-top-btn" onclick="scrollToTop()" title="Scroll back to top">
+        <svg viewBox="0 0 24 24"><path d="M12 4l-8 8h5v8h6v-8h5z"/></svg>
+        <span>Top</span>
+    </button>
+
+    <script>
+        window.initialReportData = {report_data_json};
+        window.initialHistoryData = {history_data_json};
+    </script>
+    <script src="app.js"></script>
+</body>
+</html>
