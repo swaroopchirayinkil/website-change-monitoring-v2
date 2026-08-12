@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   webglancer:
     build:
@@ -17,7 +15,7 @@ services:
       # Persist baselines, latest checks, diff heatmaps, history, and schedule config
       - webglancer_data:/app/.visual_cache
       # Persist domain target list
-      - ./.domain.txt:/app/domain.txt:rw
+      - ./domain.txt:/app/domain.txt:rw
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8087/api/status || exit 1"]
       interval: 30s
