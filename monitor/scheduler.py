@@ -35,10 +35,20 @@ DEFAULT_SCHEDULE = {
 
 def parse_24h(hour_12: int, minute: int, ampm: str) -> tuple[int, int]:
     """Convert 12-hour format with AM/PM to 24-hour hour and minute."""
-    h = hour_12 % 12
-    if ampm.upper() == "PM":
+    h = int(hour_12) % 12
+    if str(ampm).upper() == "PM":
         h += 12
-    return h, minute
+    return h, int(minute)
+
+
+def get_tz_object(tz_name: str):
+    """Get ZoneInfo object or None if invalid/unavailable."""
+    if zoneinfo and tz_name:
+        try:
+            return zoneinfo.ZoneInfo(tz_name)
+        except Exception:
+            pass
+    return None
 
 
 class SchedulerManager:
@@ -49,7 +59,6 @@ class SchedulerManager:
         self.config = dict(DEFAULT_SCHEDULE)
         self.thread = None
         self.running = False
-        self.last_triggered_date = None
 
     def load_config(self):
         """Load schedule configuration from disk."""
@@ -68,7 +77,6 @@ class SchedulerManager:
         with self.lock:
             self.config.update(new_config)
             SCHEDULE_CONFIG_FILE.write_text(json.dumps(self.config, indent=2), encoding="utf-8")
-        self.last_triggered_date = None
 
     def get_status(self) -> dict:
         """Get current scheduler configuration and calculated next execution timestamp."""
@@ -76,11 +84,12 @@ class SchedulerManager:
             cfg = dict(self.config)
 
         next_run_dt = self._calculate_next_run(cfg)
-        cfg["next_run"] = next_run_dt.strftime("%Y-%m-%d %I:%M:%S %p") if next_run_dt else "N/A"
+        cfg["next_run"] = next_run_dt.strftime("%Y-%m-%d %I:%M:%S %p (%Z)") if next_run_dt else "N/A"
         cfg["next_run_iso"] = next_run_dt.isoformat() if next_run_dt else None
 
         if next_run_dt and cfg.get("enabled"):
-            now_dt = datetime.now()
+            tz_obj = get_tz_object(cfg.get("timezone", "UTC"))
+            now_dt = datetime.now(tz_obj) if tz_obj else datetime.now()
             diff_sec = int((next_run_dt - now_dt).total_seconds())
             if diff_sec > 0:
                 hours, remainder = divmod(diff_sec, 3600)
@@ -93,22 +102,26 @@ class SchedulerManager:
 
         return cfg
 
+    def _get_current_now(self, tz_name: str) -> datetime:
+        tz_obj = get_tz_object(tz_name)
+        return datetime.now(tz_obj) if tz_obj else datetime.now()
+
     def _calculate_next_run(self, cfg: dict) -> datetime | None:
-        """Calculate next datetime for schedule based on frequency, time, and timezone."""
+        """Calculate next upcoming datetime for display."""
         if not cfg.get("enabled"):
             return None
 
         freq = cfg.get("frequency", "daily")
-        now = datetime.now()
+        tz_name = cfg.get("timezone", "UTC")
+        now = self._get_current_now(tz_name)
 
         if freq == "daily":
             target_h, target_m = parse_24h(cfg.get("hour", 9), cfg.get("minute", 0), cfg.get("ampm", "AM"))
-            next_dt = now.replace(hour=target_h, minute=target_m, second=0, microsecond=0)
-            if next_dt <= now:
-                next_dt += timedelta(days=1)
-            return next_dt
+            target_dt = now.replace(hour=target_h, minute=target_m, second=0, microsecond=0)
+            if target_dt <= now:
+                target_dt += timedelta(days=1)
+            return target_dt
         else:
-            # Interval frequency (1h, 6h, 12h)
             hours_map = {"1h": 1, "6h": 6, "12h": 12}
             interval_hours = hours_map.get(freq, 1)
 
@@ -116,12 +129,51 @@ class SchedulerManager:
             if last_run_str:
                 try:
                     last_run_dt = datetime.fromisoformat(last_run_str)
+                    if tz_obj := get_tz_object(tz_name):
+                        if last_run_dt.tzinfo is None:
+                            last_run_dt = last_run_dt.replace(tzinfo=tz_obj)
                     next_dt = last_run_dt + timedelta(hours=interval_hours)
                     if next_dt > now:
                         return next_dt
                 except Exception:
                     pass
             return now + timedelta(hours=interval_hours)
+
+    def _is_due(self, cfg: dict) -> bool:
+        """Check if scheduled scan is due to be executed now."""
+        if not cfg.get("enabled"):
+            return False
+
+        freq = cfg.get("frequency", "daily")
+        tz_name = cfg.get("timezone", "UTC")
+        now = self._get_current_now(tz_name)
+
+        last_run_dt = None
+        if cfg.get("last_run"):
+            try:
+                last_run_dt = datetime.fromisoformat(cfg["last_run"])
+                if tz_obj := get_tz_object(tz_name):
+                    if last_run_dt.tzinfo is None:
+                        last_run_dt = last_run_dt.replace(tzinfo=tz_obj)
+            except Exception:
+                pass
+
+        if freq == "daily":
+            target_h, target_m = parse_24h(cfg.get("hour", 9), cfg.get("minute", 0), cfg.get("ampm", "AM"))
+            target_today = now.replace(hour=target_h, minute=target_m, second=0, microsecond=0)
+            
+            # If current time is past today's target execution time
+            if now >= target_today:
+                # Due if we haven't run today since the target execution time
+                if last_run_dt is None or last_run_dt < target_today:
+                    return True
+            return False
+        else:
+            hours_map = {"1h": 1, "6h": 6, "12h": 12}
+            interval_hours = hours_map.get(freq, 1)
+            if last_run_dt is None:
+                return True
+            return (now - last_run_dt) >= timedelta(hours=interval_hours)
 
     def start(self, report_generator=None):
         """Start the background scheduler daemon thread."""
@@ -134,7 +186,7 @@ class SchedulerManager:
         """Main background scheduler polling loop."""
         while self.running:
             try:
-                time.sleep(10)
+                time.sleep(5)
                 with self.lock:
                     cfg = dict(self.config)
 
@@ -144,31 +196,30 @@ class SchedulerManager:
                 if scan_manager.is_running:
                     continue
 
-                next_run_dt = self._calculate_next_run(cfg)
-                now = datetime.now()
+                if self._is_due(cfg):
+                    tz_name = cfg.get("timezone", "UTC")
+                    now = self._get_current_now(tz_name)
+                    
+                    with self.lock:
+                        self.config["last_run"] = now.isoformat()
+                        SCHEDULE_CONFIG_FILE.write_text(json.dumps(self.config, indent=2), encoding="utf-8")
 
-                if next_run_dt and now >= next_run_dt:
-                    today_key = now.strftime("%Y-%m-%d-%H-%M")
-                    if self.last_triggered_date != today_key:
-                        self.last_triggered_date = today_key
-                        with self.lock:
-                            self.config["last_run"] = now.isoformat()
-                            SCHEDULE_CONFIG_FILE.write_text(json.dumps(self.config, indent=2), encoding="utf-8")
+                    print(f"⏰ [Scheduler] Triggering scheduled live visual check pass at {now.strftime('%Y-%m-%d %I:%M:%S %p %Z')}...")
 
-                        def _wrapper(results):
-                            if report_generator:
-                                report_generator(results)
-                            else:
-                                from monitor.server import generate_html_report
-                                generate_html_report(results, REPORT_FILE)
+                    def _wrapper(results):
+                        if report_generator:
+                            report_generator(results)
+                        else:
+                            from monitor.server import generate_html_report
+                            generate_html_report(results, REPORT_FILE)
 
-                        scan_manager.start_scan(
-                            action="check",
-                            speed=cfg.get("speed", "low"),
-                            report_generator=_wrapper
-                        )
+                    scan_manager.start_scan(
+                        action="check",
+                        speed=cfg.get("speed", "low"),
+                        report_generator=_wrapper
+                    )
             except Exception as e:
-                time.sleep(10)
+                time.sleep(5)
 
 
 scheduler_manager = SchedulerManager()
