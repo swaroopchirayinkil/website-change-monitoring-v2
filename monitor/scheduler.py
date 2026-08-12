@@ -86,20 +86,6 @@ class SchedulerManager:
         next_run_dt = self._calculate_next_run(cfg)
         cfg["next_run"] = next_run_dt.strftime("%Y-%m-%d %I:%M:%S %p (%Z)") if next_run_dt else "N/A"
         cfg["next_run_iso"] = next_run_dt.isoformat() if next_run_dt else None
-
-        if next_run_dt and cfg.get("enabled"):
-            tz_obj = get_tz_object(cfg.get("timezone", "UTC"))
-            now_dt = datetime.now(tz_obj) if tz_obj else datetime.now()
-            diff_sec = int((next_run_dt - now_dt).total_seconds())
-            if diff_sec > 0:
-                hours, remainder = divmod(diff_sec, 3600)
-                minutes, seconds = divmod(remainder, 60)
-                cfg["countdown_display"] = f"{hours}h {minutes}m {seconds}s"
-            else:
-                cfg["countdown_display"] = "Due now"
-        else:
-            cfg["countdown_display"] = "Disabled"
-
         return cfg
 
     def _get_current_now(self, tz_name: str) -> datetime:

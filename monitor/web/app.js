@@ -42,7 +42,6 @@ async function loadScheduleConfig() {
             const ampmSel = document.getElementById('scheduleAmpmSelect');
             const tzSel = document.getElementById('scheduleTimezoneSelect');
             const nextTxt = document.getElementById('scheduleNextRunText');
-            const countTxt = document.getElementById('scheduleCountdownText');
 
             if (enableCb) enableCb.checked = !!cfg.enabled;
             if (statusTxt) statusTxt.innerText = cfg.enabled ? '🟢 Active' : '⚪ Disabled';
@@ -52,7 +51,6 @@ async function loadScheduleConfig() {
             if (ampmSel) ampmSel.value = cfg.ampm || 'AM';
             if (tzSel) tzSel.value = cfg.timezone || 'UTC';
             if (nextTxt) nextTxt.innerText = cfg.next_run || 'N/A';
-            if (countTxt) countTxt.innerText = cfg.countdown_display || 'N/A';
 
             handleFrequencyChange();
             initWheelPickers();
@@ -340,7 +338,6 @@ async function checkServerStatus() {
                 badge.className = 'server-badge online';
                 badge.innerHTML = '🟢 REST API Server Online';
             }
-            loadScheduleConfig();
             const data = await resp.json();
             if (data.is_running) {
                 startPolling();
