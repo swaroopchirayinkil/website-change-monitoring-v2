@@ -1,0 +1,12 @@
+venv/
+.visual_cache/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.git/
+.gitignore
+.DS_Store
+README.md
+read.md
+containerization_blueprint.md
