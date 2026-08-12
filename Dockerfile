@@ -16,7 +16,7 @@ WORKDIR /app
 
 # Copy Requirements and Install Python Dependencies
 COPY requirements.txt /app/
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt && playwright install chromium
 
 # Copy Application Source Code
 COPY visual_change_detector.py /app/
