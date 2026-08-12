@@ -105,26 +105,22 @@
                     </select>
                 </div>
                 <div id="scheduleTimeGroup" class="schedule-field">
-                    <label>Execution Time (Wheel Scroll & Direct Type)</label>
+                    <label for="scheduleHourSelect">Execution Time</label>
                     <div class="wheel-time-picker">
                         <div class="wheel-column" id="hourWheelColumn">
-                            <button type="button" class="wheel-step-btn" onclick="stepHour(1)">▲</button>
-                            <input type="text" id="scheduleHourSelect" class="wheel-picker-input" value="09" maxlength="2" onblur="formatWheelInput(this, 1, 12)" onwheel="handleWheelScroll(event, 'hour')" onclick="toggleWheelPopup('hourWheelPopup')" placeholder="HH">
-                            <button type="button" class="wheel-step-btn" onclick="stepHour(-1)">▼</button>
+                            <input type="text" id="scheduleHourSelect" class="wheel-picker-input" value="09" readonly onwheel="handleWheelScroll(event, 'hour')" onclick="toggleWheelPopup('hourWheelPopup')" placeholder="HH" title="Scroll mouse wheel or click to select hour">
                             <div class="wheel-popup hidden" id="hourWheelPopup"></div>
                         </div>
 
                         <span class="wheel-separator">:</span>
 
                         <div class="wheel-column" id="minuteWheelColumn">
-                            <button type="button" class="wheel-step-btn" onclick="stepMinute(1)">▲</button>
-                            <input type="text" id="scheduleMinuteSelect" class="wheel-picker-input" value="00" maxlength="2" onblur="formatWheelInput(this, 0, 59)" onwheel="handleWheelScroll(event, 'minute')" onclick="toggleWheelPopup('minuteWheelPopup')" placeholder="MM">
-                            <button type="button" class="wheel-step-btn" onclick="stepMinute(-1)">▼</button>
+                            <input type="text" id="scheduleMinuteSelect" class="wheel-picker-input" value="00" readonly onwheel="handleWheelScroll(event, 'minute')" onclick="toggleWheelPopup('minuteWheelPopup')" placeholder="MM" title="Scroll mouse wheel or click to select minute">
                             <div class="wheel-popup hidden" id="minuteWheelPopup"></div>
                         </div>
 
                         <div class="wheel-column">
-                            <select id="scheduleAmpmSelect" class="control-select" style="min-width:75px; height:42px; font-weight:800;">
+                            <select id="scheduleAmpmSelect" class="control-select ampm-picker">
                                 <option value="AM" selected>AM</option>
                                 <option value="PM">PM</option>
                             </select>
