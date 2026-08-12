@@ -49,7 +49,7 @@ function renderHistoryGrid(reports) {
         <div class="history-item-card ${r.is_today ? 'is-today' : ''}">
             <div>
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
-                    <span style="font-weight:700; font-size:1rem; color:#fff;">🗓️ ${r.formatted_date}</span>
+                    <span style="font-weight:800; font-size:1rem; color:#1c1917;">🗓️ ${r.formatted_date}</span>
                     <span class="history-card-badge ${r.is_today ? 'badge-today' : 'badge-archive'}">${r.is_today ? 'Today' : 'Archive'}</span>
                 </div>
                 <div style="font-size:0.8rem; color:var(--text-muted); margin-top:0.3rem;">
@@ -374,11 +374,11 @@ function renderSummaryTable() {
 
         return `
             <tr>
-                <td style="color:var(--text-muted); font-weight:600;">#${item._originalIndex}</td>
-                <td style="font-weight:600;"><a href="${item.url}" target="_blank" style="color:var(--text-primary); text-decoration:none;">${item.url}</a></td>
+                <td style="color:var(--text-muted); font-weight:700;">#${item._originalIndex}</td>
+                <td style="font-weight:700;"><a href="${item.url}" target="_blank" style="color:var(--text-primary); text-decoration:none;">${item.url}</a></td>
                 <td><span class="badge badge-${stClass}">${item.status}</span></td>
-                <td style="font-weight:700; color:${item.percentage > 0 ? 'var(--accent-changed)' : 'var(--text-primary)'};">${pctDisplay}</td>
-                <td style="color:var(--text-muted);">${pxDisplay}</td>
+                <td style="font-weight:800; color:${item.percentage > 0 ? 'var(--accent-changed)' : 'var(--text-primary)'};">${pctDisplay}</td>
+                <td style="color:var(--text-muted); font-weight:600;">${pxDisplay}</td>
                 <td>
                     <div class="table-action-cell">
                         <button class="btn-sm-action btn-sm-update" onclick="triggerSingleDomainTask('update', '${safeUrl}')" title="Update baseline screenshot for this site">📸 Baseline</button>
@@ -408,9 +408,9 @@ function renderSnapshotBlocks() {
                 <div class="url-header">
                     <div class="url-title-wrapper">
                         <span class="badge badge-${stClass}">${item.status}</span>
-                        <a href="${item.url}" target="_blank" style="font-size:1.1rem; font-weight:700; color:#fff; text-decoration:none;">${item.url}</a>
-                        <span style="font-size:0.85rem; color:var(--text-muted);">| Diff: <strong style="color:#fff;">${pctDisplay}</strong> (${pxDisplay} px changed)</span>
-                        ${item.baseline_last_updated ? `<span style="font-size:0.8rem; color:var(--accent-blue); background:rgba(56,189,248,0.1); padding:0.2rem 0.6rem; border-radius:12px; border:1px solid rgba(56,189,248,0.3);">🗓️ Baseline: ${item.baseline_last_updated}</span>` : ''}
+                        <a href="${item.url}" target="_blank" style="font-size:1.1rem; font-weight:800; color:#1c1917; text-decoration:none;">${item.url}</a>
+                        <span style="font-size:0.85rem; color:var(--text-muted);">| Diff: <strong style="color:#1c1917;">${pctDisplay}</strong> (${pxDisplay} px changed)</span>
+                        ${item.baseline_last_updated ? `<span style="font-size:0.8rem; color:#6b21a8; background:#e9d5ff; padding:0.2rem 0.6rem; border-radius:12px; border:1px solid #c084fc; font-weight:700;">🗓️ Baseline: ${item.baseline_last_updated}</span>` : ''}
                     </div>
                     <div class="domain-action-buttons">
                         <button class="btn-domain-action btn-domain-update" onclick="triggerSingleDomainTask('update', '${safeUrl}')" title="Update baseline screenshot for this site">📸 Baseline</button>
@@ -418,7 +418,7 @@ function renderSnapshotBlocks() {
                         <button class="btn-domain-action btn-domain-remove" onclick="confirmAndRemoveDomain('${safeUrl}')" title="Remove domain from target list and purge cache">🗑️ Remove Domain</button>
                     </div>
                 </div>
-                ${item.error ? `<div style="padding:1.5rem; color:var(--accent-failed); background:rgba(234, 179, 8, 0.05); font-weight:600;">⚠️ Error: ${item.error}</div>` : `
+                ${item.error ? `<div style="padding:1.5rem; color:var(--accent-failed); background:#fffbeb; font-weight:600;">⚠️ Error: ${item.error}</div>` : `
                     <div class="image-grid">
                         <div class="img-container">
                             <div class="img-title">Reference Baseline</div>

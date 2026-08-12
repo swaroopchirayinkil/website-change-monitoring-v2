@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Visual Change Monitoring Suite - Dashboard</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -27,7 +27,7 @@
             <div class="control-group">
                 <label for="speedSelect">Resource Usage / Speed Selector</label>
                 <select id="speedSelect" class="control-select">
-                    <option value="low" selected>🐢 Low Resource Usage (Default: 1 Worker Thread)</option>
+                    <option value="low" selected>📦 Low Resource Usage (Default: 1 Worker Thread)</option>
                     <option value="medium">⚡ Medium Speed (4 Worker Threads)</option>
                     <option value="high">🚀 High Speed (8 Worker Threads)</option>
                 </select>
@@ -63,7 +63,7 @@
                 📸 Automatically capture initial baseline screenshot for newly added domain(s)
             </label>
             <div style="display:flex; gap:0.5rem;">
-                <button class="btn-action" style="background:#334155; color:#fff;" onclick="toggleAddDomainCard()">Cancel</button>
+                <button class="btn-action" style="background:#e9e5de; color:#1c1917; box-shadow:none;" onclick="toggleAddDomainCard()">Cancel</button>
                 <button id="btn-submit-add-domain" class="btn-action btn-add-domain" onclick="submitAddDomains()">Add to Monitoring</button>
             </div>
         </div>
@@ -73,7 +73,7 @@
     <div id="historyCard" class="history-card hidden">
         <div class="history-header">
             <div>
-                <h3 style="display:flex; align-items:center; gap:0.5rem; color:#fff; font-size:1.15rem; font-weight:700;">
+                <h3 style="display:flex; align-items:center; gap:0.5rem; color:#1c1917; font-size:1.15rem; font-weight:800;">
                     📜 Historical Reports Archive (5-Day Retention Window)
                 </h3>
                 <p style="font-size:0.85rem; color:var(--text-muted); margin-top:0.25rem;">
@@ -108,21 +108,21 @@
 
     <!-- Executive Summary Cards -->
     <div class="summary-cards">
-        <div class="card">
+        <div class="card card-total">
             <div class="title">Total Sites Scanned</div>
             <div class="value">{total}</div>
         </div>
-        <div class="card" style="border-color: rgba(244, 63, 94, 0.4);">
-            <div class="title" style="color: var(--accent-changed);">Visual Changes Detected</div>
-            <div class="value" style="color: var(--accent-changed);">{changed}</div>
+        <div class="card card-changed">
+            <div class="title">Visual Changes Detected</div>
+            <div class="value">{changed}</div>
         </div>
-        <div class="card" style="border-color: rgba(16, 185, 129, 0.4);">
-            <div class="title" style="color: var(--accent-unchanged);">Unchanged Sites</div>
-            <div class="value" style="color: var(--accent-unchanged);">{unchanged}</div>
+        <div class="card card-unchanged">
+            <div class="title">Unchanged Sites</div>
+            <div class="value">{unchanged}</div>
         </div>
-        <div class="card" style="border-color: rgba(234, 179, 8, 0.4);">
-            <div class="title" style="color: var(--accent-failed);">Failed / Unreachable</div>
-            <div class="value" style="color: var(--accent-failed);">{failed}</div>
+        <div class="card card-failed">
+            <div class="title">Failed / Unreachable</div>
+            <div class="value">{failed}</div>
         </div>
     </div>
 
@@ -131,7 +131,7 @@
         <div class="summary-table-header">
             <h2>📊 Executive Status Matrix</h2>
             <div class="table-filter-bar">
-                <span style="font-size:0.8rem; color:var(--text-muted); font-weight:600; margin-right:0.25rem;">Filter by Status:</span>
+                <span style="font-size:0.8rem; color:var(--text-muted); font-weight:700; margin-right:0.25rem;">Filter by Status:</span>
                 <span class="filter-chip active" onclick="setStatusFilter('ALL', this)">ALL ({total})</span>
                 <span class="filter-chip" onclick="setStatusFilter('CHANGED', this)">CHANGED ({changed})</span>
                 <span class="filter-chip" onclick="setStatusFilter('UNCHANGED', this)">UNCHANGED ({unchanged})</span>
