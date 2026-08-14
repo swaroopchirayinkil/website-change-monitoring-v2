@@ -9,8 +9,15 @@
 </head>
 <body>
     <div class="header">
-        <h1>📸 WebGlancer</h1>
-        <p>Execution: {now_str}</p>
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
+            <div>
+                <h1>📸 WebGlancer</h1>
+                <p>Execution: {now_str}</p>
+            </div>
+            <button onclick="handleLogout()" style="background:#450a0a; color:#fca5a5; border:1px solid #991b1b; padding:0.45rem 1rem; border-radius:8px; font-weight:700; font-size:0.85rem; cursor:pointer; display:inline-flex; align-items:center; gap:0.4rem; transition:all 0.2s;" onmouseover="this.style.background='#7f1d1d'" onmouseout="this.style.background='#450a0a'">
+                🔒 Logout
+            </button>
+        </div>
     </div>
 
     <!-- Executive Task Control Panel -->

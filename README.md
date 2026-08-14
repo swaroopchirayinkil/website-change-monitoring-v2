@@ -1,22 +1,20 @@
 # Website Change Monitoring Suite
 
-A robust, dual-engine suite for monitoring website changes, supporting both **Visual Screenshot Diffing** (designed for modern Single-Page Applications like React, Next.js, Vue, Angular) and **Static HTML Structural Diffing**, complete with an interactive Web Dashboard, live execution progress, single-domain targeted controls, and full CRUD domain management.
+A robust, dual-engine suite for monitoring website changes, supporting both **Visual Screenshot Diffing** (designed for modern Single-Page Applications like React, Next.js, Vue, Angular) and **Static HTML Structural Diffing**, complete with an interactive Web Dashboard, **hCaptcha & Session Authentication**, **Brute-Force Rate Limiting**, **30-Day Audit Logging**, live execution progress, single-domain targeted controls, and Docker/Portainer deployment blueprints.
 
 ---
 
 ## 📋 Table of Contents
 
 1. [Overview & Key Features](#-overview--key-features)
-2. [Tools Included](#-tools-included)
-3. [Interactive Web Dashboard & Server Mode](#-interactive-web-dashboard--server-mode)
-4. [Domain Management (Add & Remove Controls)](#-domain-management-add--remove-controls)
-5. [Step-by-Step Setup on a New Machine](#-step-by-step-setup-on-a-new-machine)
-6. [Detailed CLI Reference & Options](#-detailed-cli-reference--options)
-   - [Visual SPA Monitoring (`visual_change_detector.py`)](#1-visual-spa-monitoring-visual_change_detectorpy)
-   - [HTML Text Monitoring (`website_change_detect.py`)](#2-html-text-monitoring-website_change_detectpy)
-7. [Testing the Features](#-testing-the-features)
-8. [Usage Examples & Common Workflows](#-usage-examples--common-workflows)
-9. [Directory Structure & Cache Files](#-directory-structure--cache-files)
+2. [Security, Authentication & Rate Limiting](#-security-authentication--rate-limiting)
+3. [Tools Included](#-tools-included)
+4. [Docker & Portainer Deployment](#-docker--portainer-deployment)
+5. [Interactive Web Dashboard & Server Mode](#-interactive-web-dashboard--server-mode)
+6. [Domain Management (Add & Remove Controls)](#-domain-management-add--remove-controls)
+7. [Step-by-Step Setup on a New Machine](#-step-by-step-setup-on-a-new-machine)
+8. [Detailed REST API & CLI Reference](#-detailed-rest-api--cli-reference)
+9. [Directory Structure & Persistence](#-directory-structure--persistence)
 10. [Automating with Cron / CI/CD](#-automating-with-cron--cicd)
 11. [Troubleshooting & FAQ](#-troubleshooting--faq)
 
@@ -28,246 +26,145 @@ Modern websites rely heavily on client-side JavaScript, async data fetching, and
 
 This suite provides two complementary engines:
 
-1. **Visual Engine (`visual_change_detector.py`)**: Uses Playwright (Headless Chromium) with multithreaded parallel execution to render pages after JavaScript hydration, take high-resolution screenshots, mask volatile UI elements, compute pixel-by-pixel diff heatmaps, and host an interactive Web Dashboard.
+1. **Visual Engine (`visual_change_detector.py`)**: Uses Playwright (Headless Chromium) with multithreaded parallel execution to render pages after JavaScript hydration, take high-resolution screenshots, mask volatile UI elements, compute pixel-by-pixel diff heatmaps, host an interactive Web Dashboard, and enforce **hCaptcha-protected authentication**.
 2. **DOM Engine (`website_change_detect.py`)**: Uses Requests & BeautifulSoup for fast, lightweight static HTML comparison, automatically stripping dynamic non-visual tags (scripts, styles, CSRF tokens, GUIDs).
 
 ---
 
-## 🛠️ Tools Included
+## 🛡️ Security, Authentication & Rate Limiting
 
-### 1. `visual_change_detector.py` (Visual SPA Monitor & Web Dashboard)
-- **Interactive Web Dashboard Server (`serve`)**: Built-in HTTP server hosting a modern dashboard (`http://localhost:8000/report.html`) with server online indicator, task controller, live progress banner, log console, and domain management.
-- **Granular Single-Domain Controls**: Dedicated `📸 Baseline` and `🔍 Check` control buttons for every domain to trigger targeted single-site scans without re-scanning the entire suite.
-- **Full Domain Management**: Add single/bulk domains and remove domains (with automatic cache purging) via Web UI and REST API.
-- **High-Speed Parallel Processing (`-c` / `--concurrency`)**: Uses worker thread pools to process multiple URLs simultaneously with configurable speed presets (Low: 1 worker, Medium: 4 workers, High: 8 workers).
-- **Persistent Worker Browsers**: Reuses browser instances per worker thread, eliminating browser startup overhead for every URL.
-- **Resilient Timeout Fallback**: Automatically captures currently rendered DOM state if slow external trackers exceed navigation timeouts.
-- **Element Masking (`--mask`)**: Injects dynamic CSS rules to hide volatile components (clocks, ads, dynamic banners, chat widgets) prior to screenshot capture.
-- **Pixel-by-Pixel Diff Engine & Heatmap**: Employs Python `Pillow` to compute pixel mismatches, filter anti-aliasing noise, and output high-contrast magenta heatmaps.
+The application includes enterprise-grade security features for deployment via Portainer or cloud servers:
 
-### 2. `website_change_detect.py` (Lightweight HTML Text Inspector)
-- **Fast Static DOM Scraping**: Fast HTTP requests via `requests`.
-- **Intelligent HTML Cleaning**: Automatically removes script tags, CSS styles, hidden inputs (CSRF, state tokens), and randomized query parameter GUIDs.
-- **Unified Diff Output**: Outputs standard unified line diffs when structural changes are detected.
-- **Domain CLI Management**: Supports `add` and `remove` subcommands to maintain the monitoring target list and HTML cache files.
+### 1. hCaptcha Login Verification
+- Dark-themed login page (`/login.html`) protected by **hCaptcha** bot verification.
+- Every login request verifies the challenge token with the official hCaptcha API (`https://api.hcaptcha.com/siteverify`).
+
+### 2. Session Cookie Authentication
+- Restricted dashboard routes (`/`, `/report.html`, `.png` assets) and REST API endpoints require a valid `webglancer_session` HTTP cookie (`HttpOnly` & `SameSite=Lax`).
+- Includes a persistent **🔒 Logout** button in the dashboard header to invalidate active sessions.
+
+### 3. Brute-Force Rate Limiting & 5-Minute Lockout
+- **5 Consecutive Failed Attempts**: Tracks failed login attempts (invalid password or failed captcha) per client IP address.
+- **5-Minute Lockout**: Triggers an automatic 5-minute lockout (`HTTP 429 Too Many Requests`) upon the 5th consecutive failure.
+- **Dynamic Countdown**: Displays remaining lockout seconds (`"Please wait 4 minute(s) and 58 second(s)..."`).
+- **Auto-Reset**: Successful logins automatically reset the failed attempt counter.
+
+### 4. 30-Day Audit Logging & Automatic Pruning
+- Every login attempt (`SUCCESS`, `FAILED`, `RATE_LIMITED`, `LOGOUT`) is logged with **Timestamp**, **Client IP Address** (with `X-Forwarded-For` proxy support), **Username**, and **Reason**.
+- Logs stream to standard output (`stdout` / Docker logs) and persist in `.visual_cache/login_audit.log`.
+- **30-Day Retention Window**: Log entries older than 30 days are automatically pruned during daily maintenance sweeps to save disk space.
+- Protected endpoint `GET /api/login-logs` provides real-time audit log access.
+
+### 5. Secure Secret Management (DevSecOps Best Practice)
+- Secrets are **never hardcoded** in container image layers (`Dockerfile`).
+- Managed dynamically via `.env` file and container runtime environment variables.
+
+---
+
+## 🐳 Docker & Portainer Deployment
+
+Deploy WebGlancer seamlessly using Docker Compose or Portainer Stacks.
+
+### 1. Environment Variables Configuration
+
+Create a `.env` file in the project root (copied from `.env.example`):
+
+```env
+# Dashboard Admin Credentials
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=your_secure_password_here
+
+# hCaptcha Security Credentials
+HCAPTCHA_SITEKEY=56d027fa-471e-4af2-bf82-f8a453acb8e2
+HCAPTCHA_SECRET=your_hcaptcha_secret_key_here
+```
+
+### 2. Docker Compose Deployment
+
+```bash
+# Build and start container in background
+docker-compose up -d --build
+
+# View real-time container logs
+docker-compose logs -f
+```
+
+### 3. Portainer Stack Blueprint
+
+In **Portainer** → **Stacks** → **Add Stack**, paste the following configuration:
+
+```yaml
+version: "3.8"
+
+services:
+  webglancer:
+    image: webglancer:latest
+    container_name: webglancer-app
+    restart: unless-stopped
+    ports:
+      - "8087:8087"
+    env_file:
+      - .env
+    environment:
+      - TZ=Asia/Kolkata
+      - PYTHONUNBUFFERED=1
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+      - HCAPTCHA_SITEKEY=${HCAPTCHA_SITEKEY}
+      - HCAPTCHA_SECRET=${HCAPTCHA_SECRET}
+    volumes:
+      # Persist screenshots, history, schedule config, and audit logs
+      - webglancer_data:/app/.visual_cache
+      # Persist domain target list
+      - ./domain.txt:/app/domain.txt:rw
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8087/login.html || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  webglancer_data:
+    name: webglancer_data
+```
 
 ---
 
 ## 🌐 Interactive Web Dashboard & Server Mode
 
-Start the web server to access the interactive dashboard:
+Start the web server locally or inside a container:
 
 ```bash
-python visual_change_detector.py serve
+python visual_change_detector.py serve --port 8087
 ```
-Then visit **`http://localhost:8000/report.html`** in your browser.
 
-### Key Features of the Dashboard
-- **Executive Task Controller**: Launch suite-wide or single-domain baseline updates and live visual checks with one click.
-- **Resource Usage / Speed Selector**:
-  - 🐢 **Low Resource Usage**: 1 worker thread (ideal for low-RAM VMs or single-core environments).
-  - ⚡ **Medium Speed**: 4 worker threads.
-  - 🚀 **High Speed**: 8 worker threads (maximum batch scanning throughput).
-- **Live Task Progress Banner & Log Console**: Displays real-time scan percentage, currently active URL, active worker count, and scrolling logs during execution.
-- **Targeted Single-Domain Actions**: Each domain row includes dedicated `📸 Baseline`, `🔍 Check`, and `🗑️ Remove` buttons.
-- **Interactive Executive Table**: Instant sorting by URL, status, or diff percentage, plus status filter chips (`All`, `Changed`, `Unchanged`, `Failed`).
-- **Floating Smooth Scroll**: Floating `↑ Top` button for seamless navigation across large reports.
+- **Login Page URL:** `http://localhost:8087/login.html`
+- **Dashboard URL:** `http://localhost:8087/report.html` *(Requires login)*
 
 ---
 
-## ➕ Domain Management (Add & Remove Controls)
+## 📖 Detailed REST API & CLI Reference
 
-### 1. Adding Domains (Single & Bulk)
-* **Web UI**: Click **`➕ Add Domain(s)`** in the control panel to expand the domain input card. Type one or multiple URLs (one per line). Option to automatically generate baseline screenshots upon adding.
-* **REST API**: `POST /api/add-domain` accepts JSON `{"urls": [...], "create_baseline": true}`.
-* **CLI**:
-  ```bash
-  python visual_change_detector.py add --url https://example.com --create-baseline
-  python website_change_detect.py add --url https://example.com
-  ```
+### REST API Endpoints
 
-### 2. Removing Domains & Purging Cache
-* **Web UI**: Click **`🗑️ Remove`** next to any domain in the summary table or block header. Confirms action, removes domain from `domain.txt`, purges cached screenshots, and reloads the report.
-* **REST API**: `POST /api/remove-domain` accepts JSON `{"url": "https://example.com"}`.
-* **CLI**:
-  ```bash
-  python visual_change_detector.py remove --url https://example.com
-  python website_change_detect.py remove --url https://example.com
-  ```
-
----
-
-## 🚀 Step-by-Step Setup on a New Machine
-
-Follow these exact steps to set up and run the monitoring tools on a fresh system (Linux, macOS, or Windows WSL).
-
-### System Prerequisites
-- **Python**: Version 3.8 or higher (`python3 --version`)
-- **Git**: Installed on system
-- **Internet Access**: To fetch Playwright browser binaries and target URLs.
-
-### Step 1: Clone the Repository
-```bash
-git clone https://github.com/swaroopchirayinkil/website-change-monitoring.git
-cd website-change-monitoring
-```
-
-### Step 2: Create and Activate a Virtual Environment
-```bash
-# Create virtual environment
-python3 -m venv venv
-
-# Activate on Linux/macOS:
-source venv/bin/activate
-
-# Activate on Windows (Command Prompt):
-# venv\Scripts\activate.bat
-
-# Activate on Windows (PowerShell):
-# venv\Scripts\Activate.ps1
-```
-
-### Step 3: Install Python Dependencies
-```bash
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-### Step 4: Install Playwright Headless Chromium Browser & System Dependencies
-Playwright requires headless Chromium browser binaries and native Linux shared libraries to execute screenshots on headless Linux virtual machines.
-
-```bash
-# Install Chromium browser binary inside venv
-playwright install chromium
-
-# MANDATORY on Linux/Ubuntu Virtual Machines (runs install-deps via venv path so sudo can find it):
-sudo ./venv/bin/playwright install-deps chromium
-```
-
----
-
-## 📖 Detailed CLI Reference & Options
-
-### 1. Visual SPA Monitoring (`visual_change_detector.py`)
-
-#### Command Syntax
-```bash
-python visual_change_detector.py <command> [options]
-```
-
-#### Eg: Command Syntax to run the Rest API Server and create dashboard
-
-```bash
-python visual_change_detector.py serve
-```
-
-#### Subcommands
-* `serve`: Launch the interactive Web Dashboard & REST API server (`http://localhost:8000/report.html`).
-* `add`: Single or bulk add domain(s) to monitoring list with deduplication and optional baseline generation (`--create-baseline` / `-b`).
-* `remove`: Remove domain(s) from monitoring list and clean up baseline/latest/diff cache files.
-* `update`: Captures target page screenshot(s) and saves them as baseline snapshots.
-* `check`: Captures live screenshot(s), compares them against existing baselines, calculates visual difference percentages, and generates the HTML report.
-
-#### Global & Subcommand Options
-
-##### Web Dashboard Server (`serve` Subcommand)
-| Option | Type | Default | Description |
+| Endpoint | Method | Auth | Description |
 | :--- | :--- | :--- | :--- |
-| `--port` | Integer | `8000` | HTTP port to listen on. |
-| `--host` | String | `0.0.0.0` | Host IP address to bind to (`0.0.0.0` allows network access). |
-| `--no-browser` | Flag | `False` | Disables automatic browser launch upon server startup. |
-
-##### Domain Management (`add` and `remove` Subcommands)
-| Option | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `--url`, `-u` | String | `None` | Single or multiple target domain(s)/URL(s) (repeatable). |
-| `--import-file`, `-f` | Path | `None` | Path to a text file containing domains (one per line). |
-| `positional_urls` | String | `None` | Domains/URLs passed directly as positional CLI arguments. |
-| `--target-file` | Path | `domain.txt` | Target domain list file to update. |
-| `--create-baseline`, `-b` | Flag | `False` | *(Add only)* Automatically capture baseline screenshots for newly added domains. |
-
-##### Capture & Diff Engine (`update` / `check` Subcommands)
-| Option | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `--url` | String | `None` | Target URL to monitor (repeatable). |
-| `--url-file` | Path | `None` | Path to a text file containing target URLs (one per line). |
-| `-c`, `--concurrency` | Integer | `4` | Number of parallel Playwright browser worker threads. |
-| `--wait-until` | String | `load` | Navigation wait strategy (`load`, `domcontentloaded`, or `networkidle`). |
-| `--timeout` | Integer | `30000` | Navigation timeout in milliseconds before fallback capture. |
-| `--width` | Integer | `1280` | Viewport width in pixels. |
-| `--height` | Integer | `800` | Viewport height in pixels. |
-| `--full-page` | Flag | `True` | Captures full scrollable height of the page. |
-| `--wait-ms` | Integer | `1000` | Milliseconds to wait after load for JavaScript hydration. |
-| `--wait-selector` | String | `None` | CSS selector to wait for before taking snapshot. |
-| `--mask` | String | `None` | CSS selector of dynamic elements to hide/mask before capture (repeatable). |
-| `--threshold` | Float | `0.1` | *(Check only)* Percentage threshold of visual pixel change to trigger `Changed` status. |
+| `/login.html` | GET | Public | Serves the hCaptcha login interface. |
+| `/api/hcaptcha-config` | GET | Public | Returns active hCaptcha sitekey. |
+| `/api/login` | POST | Public | Authenticates credentials & hCaptcha token. Sets session cookie. |
+| `/api/logout` | POST | Public | Invalidates session token and clears cookie. |
+| `/api/status` | GET | Session | Returns scan state, worker concurrency, and live progress logs. |
+| `/api/history` | GET | Session | Returns list of archived 5-day daily reports. |
+| `/api/login-logs` | GET | Session | Returns recent login audit log entries (IP, timestamp, status). |
+| `/api/schedule` | GET / POST| Session | Retrieves or updates background scan schedule config. |
+| `/api/start-scan` | POST | Session | Triggers suite-wide or custom domain visual scan (`check`/`update`). |
+| `/api/add-domain` | POST | Session | Adds new domain(s) with optional baseline creation. |
+| `/api/remove-domain`| POST | Session | Removes domain and purges baseline/latest/diff cache files. |
 
 ---
 
-### 2. HTML Text Monitoring (`website_change_detect.py`)
-
-```bash
-python website_change_detect.py <command> [options]
-```
-
-* `update`: Fetches HTML, applies tag cleaning, and saves baseline HTML to `.website_change_cache/`.
-* `check`: Fetches live HTML, applies tag cleaning, and compares line-by-line with cached snapshot.
-* `add`: Adds domain(s) to target file with optional `--update-cache`.
-* `remove`: Removes domain(s) from target file and deletes HTML cache files.
-
----
-
-## 🧪 Testing the Features
-
-### 1. Testing Web Dashboard UI
-1. **Start Server**: `python visual_change_detector.py serve`
-2. **Open Browser**: Go to `http://localhost:8000/report.html`.
-3. **Test Add Domain**:
-   - Click `➕ Add Domain(s)`.
-   - Enter `https://news.ycombinator.com`.
-   - Ensure auto-baseline checkbox is checked and click `Add to Monitoring`.
-   - Verify progress bar completes and page reloads with the new domain.
-4. **Test Targeted Single-Domain Check**:
-   - Click `🔍 Check` on an individual domain row.
-   - Verify scan runs only for that single domain.
-5. **Test Remove Domain**:
-   - Click `🗑️ Remove` next to a domain.
-   - Confirm removal dialog.
-   - Verify domain is removed from table and `domain.txt`.
-
-### 2. Testing CLI Subcommands
-```bash
-# Add domain via CLI with auto-baseline
-python visual_change_detector.py add --url https://example.com --create-baseline
-
-# Run visual check for single domain
-python visual_change_detector.py check --url https://example.com
-
-# Remove domain via CLI
-python visual_change_detector.py remove --url https://example.com
-```
-
----
-
-## 💡 Usage Examples & Common Workflows
-
-### High-Speed Batch Scan (8 Parallel Workers)
-```bash
-python visual_change_detector.py check --url-file domain.txt --threshold 0.1 -c 8 --wait-ms 500
-```
-
-### Masking Dynamic Ads and Chat Widgets
-```bash
-python visual_change_detector.py check \
-  --url https://example.com \
-  --mask ".ad-banner" \
-  --mask "#chat-widget" \
-  --threshold 0.5
-```
-
----
-
-## 📁 Directory Structure & Cache Files
+## 📁 Directory Structure & Persistence
 
 ```
 website-change-monitoring/
@@ -275,43 +172,46 @@ website-change-monitoring/
 ├── website_change_detect.py     # Requests & BeautifulSoup HTML Structural Monitor
 ├── requirements.txt             # Python package dependencies
 ├── domain.txt                   # Monitored domain target file
-├── README.md                    # Complete project documentation
-├── .visual_cache/               # Managed visual cache directory
-│   ├── baselines/               # Reference baseline screenshots (.png)
-│   ├── latest/                  # Live screenshots (.png)
-│   ├── diffs/                   # Visual diff heatmaps (.png)
-│   └── report.html              # Interactive HTML dashboard report
-└── .website_change_cache/       # Managed HTML cache directory
-    └── <url_hash>.html          # Cached cleaned HTML snapshots
-```
-
----
-
-## ⏰ Automating with Cron / CI/CD
-
-### Example Linux Cron Job (Hourly Checks)
-```bash
-0 * * * * cd /path/to/website-change-monitoring && ./venv/bin/python visual_change_detector.py check --url-file domain.txt -c 4 >> /var/log/website_monitor.log 2>&1
+├── Dockerfile                   # Production Docker image build recipe
+├── docker-compose.yml           # Docker Compose orchestration blueprint
+├── .env.example                 # Environment configuration template
+├── .env                         # Local runtime secrets (Git ignored)
+├── monitor/                     # Application Package Core
+│   ├── auth.py                  # Session handling, hCaptcha, Rate Limiting & Audit Logger
+│   ├── server.py                # HTTP Server Handler & REST API Router
+│   ├── scan_manager.py          # Parallel worker pool manager
+│   ├── retention_manager.py     # Daily report & 30-day log retention pruner
+│   ├── scheduler.py             # Persistent daily background scanner
+│   └── web/                     # Web Frontend Templates & Assets
+│       ├── login.html           # Dark-mode glassmorphism login UI
+│       ├── index.html           # Dashboard template
+│       ├── styles.css           # UI Design System CSS
+│       └── app.js               # Frontend JavaScript controller
+└── .visual_cache/               # Persistent volume mount path
+    ├── baselines/               # Reference baseline screenshots (.png)
+    ├── latest/                  # Live screenshots (.png)
+    ├── diffs/                   # Visual diff heatmaps (.png)
+    ├── history/                 # 5-day daily report archives (.html)
+    ├── login_audit.log          # 30-day persistent login audit log
+    └── schedule_config.json     # Saved background schedule configuration
 ```
 
 ---
 
 ## ❓ Troubleshooting & FAQ
 
-### 1. `OSError: [Errno 98] Address already in use`
-* **Cause**: A web server process is already running on port 8000.
-* **Fix Options**:
-  - Run on a different port: `python visual_change_detector.py serve --port 8080`
-  - Or free port 8000: `fuser -k 8000/tcp`
+### 1. `HTTP 429 Too Many Requests`
+* **Cause**: 5 consecutive failed login attempts were recorded from your IP address.
+* **Fix**: Wait 5 minutes for the lockout counter to automatically expire, or enter correct credentials once unblocked.
 
-### 2. Playwright / Chromium Missing Dependencies on Linux
-* **Cause**: Missing Linux system libraries for headless browser rendering.
-* **Fix**: Run `sudo ./venv/bin/playwright install-deps chromium`.
+### 2. hCaptcha Verification Fails
+* **Cause**: Missing or invalid `HCAPTCHA_SITEKEY` / `HCAPTCHA_SECRET` environment variables.
+* **Fix**: Verify your sitekey and secret key in `.env` or Portainer environment variables.
 
-### 3. False Alerts on Dynamic Timestamps or News Tickers
-* **Cause**: Live clock or dynamic widget changes between runs.
-* **Fix**: Use `--mask` with dynamic CSS selectors (e.g. `--mask ".timestamp" --mask ".live-ad"`).
+### 3. Missing Audit Logs
+* **Cause**: Logs older than 30 days are automatically pruned to save disk space.
+* **Fix**: Active logs within 30 days are stored in `.visual_cache/login_audit.log` and accessible via `/api/login-logs`.
 
 ---
 
-*Maintained for web infrastructure monitoring and visual regression testing.*
+*Maintained for secure enterprise web monitoring and visual regression testing.*

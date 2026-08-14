@@ -9,6 +9,11 @@ ENV/
 .website_change_cache/
 report.html
 
+# Environment variables & secrets
+.env
+*.env
+!.env.example
+
 # Python bytecode & cache
 __pycache__/
 *.py[cod]

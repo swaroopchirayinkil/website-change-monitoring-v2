@@ -6,6 +6,10 @@ __pycache__/
 *.pyd
 .git/
 .gitignore
+.dockerignore
+.env
+*.env
+!.env.example
 .DS_Store
 README.md
 read.md

@@ -644,6 +644,14 @@ function handleScrollTopButtonVisibility() {
     }
 }
 
+// Logout Handler
+async function handleLogout() {
+    try {
+        await fetch('/api/logout', { method: 'POST' });
+    } catch(e) {}
+    window.location.href = '/login.html';
+}
+
 // Initialization on DOM Content Loaded
 document.addEventListener('DOMContentLoaded', () => {
     checkServerStatus();

@@ -2,7 +2,7 @@
 """
 monitor/server.py
 -----------------
-HTTP Server Handler and REST API routing for WebGlancer.
+HTTP Server Handler and REST API routing for WebGlancer with Session & hCaptcha Authentication, Rate Limiting, and Audit Logging.
 """
 
 import http.server
@@ -17,6 +17,23 @@ from monitor.domain_manager import url_to_slug, add_domains_to_file, remove_doma
 from monitor.scan_manager import scan_manager, build_combined_report_results
 from monitor.retention_manager import cleanup_old_reports, get_historical_reports
 from monitor.scheduler import scheduler_manager
+from monitor.auth import (
+    get_hcaptcha_sitekey,
+    get_admin_username,
+    get_admin_password,
+    verify_hcaptcha_token,
+    create_session,
+    invalidate_session,
+    is_valid_session,
+    get_session_from_headers,
+    get_client_ip,
+    log_login_attempt,
+    get_login_audit_logs,
+    check_rate_limit,
+    record_failed_login,
+    record_successful_login,
+)
+
 
 def generate_html_report(results: list[dict], output_path: Path = REPORT_FILE):
     """Generate interactive HTML report dashboard using external HTML/CSS/JS template files."""
@@ -66,7 +83,7 @@ def generate_html_report(results: list[dict], output_path: Path = REPORT_FILE):
 
 
 class MonitoringRequestHandler(http.server.SimpleHTTPRequestHandler):
-    """Custom HTTP Handler serving Dashboard UI and REST API endpoints."""
+    """Custom HTTP Handler serving Dashboard UI, Authentication, and REST API endpoints."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(CACHE_DIR), **kwargs)
@@ -75,7 +92,8 @@ class MonitoringRequestHandler(http.server.SimpleHTTPRequestHandler):
         # Enable CORS for local API access
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Cookie")
+        self.send_header("Access-Control-Allow-Credentials", "true")
         super().end_headers()
 
     def do_OPTIONS(self):
@@ -83,7 +101,25 @@ class MonitoringRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
-        # Serve static frontend web assets from monitor/web/
+        # 1. PUBLIC ENDPOINTS (No authentication required)
+        if self.path in ["/login", "/login.html"]:
+            login_path = WEB_DIR / "login.html"
+            if login_path.exists():
+                content = login_path.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(content)))
+                self.end_headers()
+                self.wfile.write(content)
+                return
+
+        if self.path == "/api/hcaptcha-config":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"sitekey": get_hcaptcha_sitekey()}).encode("utf-8"))
+            return
+
         if self.path in ["/styles.css", "/app.js"]:
             asset_path = WEB_DIR / self.path.lstrip("/")
             if asset_path.exists():
@@ -96,7 +132,23 @@ class MonitoringRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(content)
                 return
 
-        # Redirect root paths to report dashboard
+        # 2. SESSION AUTHENTICATION CHECK
+        session_token = get_session_from_headers(self.headers)
+        if not is_valid_session(session_token):
+            if self.path.startswith("/api/"):
+                self.send_response(401)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Unauthorized", "message": "Authentication required. Please login."}).encode("utf-8"))
+                return
+            else:
+                # Redirect unauthenticated HTML / asset GET requests to login page
+                self.send_response(302)
+                self.send_header("Location", "/login.html")
+                self.end_headers()
+                return
+
+        # 3. PROTECTED ENDPOINTS (Valid Session Verified)
         if self.path in ["/", "/index.html"]:
             self.send_response(302)
             self.send_header("Location", "/report.html")
@@ -121,6 +173,15 @@ class MonitoringRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps({"reports": reports}).encode("utf-8"))
             return
 
+        # REST API: Login Audit Logs Endpoint
+        if self.path == "/api/login-logs":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            logs = get_login_audit_logs(limit=100)
+            self.wfile.write(json.dumps({"logs": logs}).encode("utf-8"))
+            return
+
         # REST API: Schedule GET Endpoint
         if self.path == "/api/schedule":
             self.send_response(200)
@@ -139,6 +200,88 @@ class MonitoringRequestHandler(http.server.SimpleHTTPRequestHandler):
             post_data = json.loads(post_data_raw)
         except Exception:
             post_data = {}
+
+        # 1. PUBLIC API: LOGIN ENDPOINT WITH HCAPTCHA VERIFICATION, RATE LIMITING & AUDIT LOGGING
+        if self.path == "/api/login":
+            username = post_data.get("username", "").strip()
+            password = post_data.get("password", "")
+            hcaptcha_token = post_data.get("hcaptcha_response", "")
+            client_ip = get_client_ip(self.headers, self.client_address)
+
+            # Check if client IP is currently rate-limited (5-minute lockout)
+            is_locked, lock_msg, remaining_sec = check_rate_limit(client_ip)
+            if is_locked:
+                log_login_attempt("RATE_LIMITED", username or "unknown", client_ip, lock_msg)
+                self.send_response(429)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Retry-After", str(remaining_sec))
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "message": lock_msg, "retry_after": remaining_sec}).encode("utf-8"))
+                return
+
+            # Verify admin credentials
+            expected_user = get_admin_username()
+            expected_pass = get_admin_password()
+
+            if username != expected_user or password != expected_pass:
+                record_failed_login(client_ip)
+                is_now_locked, lock_reason_msg, _ = check_rate_limit(client_ip)
+                err_msg = lock_reason_msg if is_now_locked else "Invalid username or password."
+
+                log_login_attempt("FAILED", username or "unknown", client_ip, "Invalid username or password")
+                self.send_response(429 if is_now_locked else 401)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "message": err_msg}).encode("utf-8"))
+                return
+
+            # Verify hCaptcha token
+            hcaptcha_ok, hcaptcha_msg = verify_hcaptcha_token(hcaptcha_token, remote_ip=client_ip)
+
+            if not hcaptcha_ok:
+                record_failed_login(client_ip)
+                is_now_locked, lock_reason_msg, _ = check_rate_limit(client_ip)
+                err_msg = lock_reason_msg if is_now_locked else hcaptcha_msg
+
+                log_login_attempt("FAILED", username, client_ip, f"hCaptcha validation failed: {hcaptcha_msg}")
+                self.send_response(429 if is_now_locked else 400)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "message": err_msg}).encode("utf-8"))
+                return
+
+            # Successful login: reset failed login attempts counter and issue session
+            record_successful_login(client_ip)
+            session_token = create_session()
+            log_login_attempt("SUCCESS", username, client_ip, "Login successful")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Set-Cookie", f"webglancer_session={session_token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800")
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": True, "message": "Login successful!"}).encode("utf-8"))
+            return
+
+        # 2. PUBLIC API: LOGOUT ENDPOINT
+        if self.path == "/api/logout":
+            client_ip = get_client_ip(self.headers, self.client_address)
+            session_token = get_session_from_headers(self.headers)
+            invalidate_session(session_token)
+            log_login_attempt("LOGOUT", get_admin_username(), client_ip, "User logged out")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Set-Cookie", "webglancer_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax")
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": True, "message": "Logged out."}).encode("utf-8"))
+            return
+
+        # 3. SESSION AUTHENTICATION CHECK FOR PROTECTED POST ENDPOINTS
+        session_token = get_session_from_headers(self.headers)
+        if not is_valid_session(session_token):
+            self.send_response(401)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Unauthorized", "message": "Authentication required."}).encode("utf-8"))
+            return
 
         # REST API: Schedule POST Endpoint
         if self.path == "/api/schedule":
@@ -263,8 +406,8 @@ def run_server(host: str = "0.0.0.0", port: int = 8000, open_browser: bool = Tru
     print(" 🚀 WEBGLANCER REST API SERVER STARTED")
     print("="*70)
     print(f" 🌐 Web Dashboard URL:  {url}")
-    print(f" 📡 Local Server Address: http://{host}:{port}")
-    print(" ⚡ High-Speed Concurrency Controls: Active")
+    print(f" 🔑 Login Page URL:    http://localhost:{port}/login.html")
+    print(f" 🛡️  hCaptcha Security: Active")
     print(" Press Ctrl+C to stop the server.")
     print("="*70 + "\n")
 
