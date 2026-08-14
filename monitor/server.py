@@ -389,9 +389,9 @@ class MonitoringRequestHandler(http.server.SimpleHTTPRequestHandler):
 def run_server(host: str = "0.0.0.0", port: int = 8000, open_browser: bool = True):
     """Start the interactive Web Dashboard & REST API server."""
     ensure_dirs()
-    if not REPORT_FILE.exists():
-        combined = build_combined_report_results()
-        generate_html_report(combined, REPORT_FILE)
+    # Always regenerate report.html from template on server startup
+    combined = build_combined_report_results()
+    generate_html_report(combined, REPORT_FILE)
 
     scheduler_manager.start(report_generator=generate_html_report)
 
