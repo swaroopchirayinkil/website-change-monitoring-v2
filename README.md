@@ -75,7 +75,7 @@ ADMIN_USERNAME=admin
 ADMIN_PASSWORD=your_secure_password_here
 
 # hCaptcha Security Credentials
-HCAPTCHA_SITEKEY=56d027fa-471e-4af2-bf82-f8a453acb8e2
+HCAPTCHA_SITEKEY=your_hcaptcha_sitekey_key_here
 HCAPTCHA_SECRET=your_hcaptcha_secret_key_here
 ```
 
