@@ -1,25 +1,29 @@
-version: "3.8"
-
 services:
   webglancer:
     build:
       context: .
       dockerfile: Dockerfile
     image: webglancer:latest
-    container_name: webglancer-app
     restart: unless-stopped
     ports:
       - "8087:8087"
+    env_file:
+      - path: .env
+        required: false
     environment:
       - TZ=Asia/Kolkata
       - PYTHONUNBUFFERED=1
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+      - HCAPTCHA_SITEKEY=${HCAPTCHA_SITEKEY:-56d027fa-471e-4af2-bf82-f8a453acb8e2}
+      - HCAPTCHA_SECRET=${HCAPTCHA_SECRET}
     volumes:
       # Persist baselines, latest checks, diff heatmaps, history, and schedule config
       - webglancer_data:/app/.visual_cache
       # Persist domain target list
-      - ./.domain.txt:/app/domain.txt:rw
+      - ./domain.txt:/app/domain.txt:rw
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8087/api/status || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8087/login.html || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3

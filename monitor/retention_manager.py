@@ -2,13 +2,15 @@
 """
 monitor/retention_manager.py
 -----------------------------
-Daily HTML report retention management and historical archive tracking.
+Daily HTML report retention management, historical archive tracking, and audit log cleanup.
 """
 
 import re
 from datetime import datetime, date, timedelta
 from pathlib import Path
 from monitor.config import CACHE_DIR
+from monitor.auth import cleanup_old_login_logs
+
 
 def get_baseline_timestamp_display(baseline_path: Path) -> str:
     """Return formatted timestamp string of baseline modification time."""
@@ -20,6 +22,7 @@ def get_baseline_timestamp_display(baseline_path: Path) -> str:
         except Exception:
             return "Baseline available"
     return "Baseline not created"
+
 
 def cleanup_old_reports(max_days: int = 5):
     """Retain only the last 5 calendar days of reports, automatically deleting older reports."""
@@ -39,6 +42,10 @@ def cleanup_old_reports(max_days: int = 5):
                     f.unlink(missing_ok=True)
             except ValueError:
                 pass
+
+    # Also perform 30-day retention cleanup for login audit logs
+    cleanup_old_login_logs(max_days=30)
+
 
 def get_historical_reports() -> list[dict]:
     """Retrieve list of available historical daily reports in CACHE_DIR (within 5-day retention window)."""

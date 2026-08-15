@@ -114,7 +114,7 @@ class ScanManager:
             self.action = action
             self.speed = speed.lower() if speed else "low"
             # Default is LOW resource usage (1 worker process)
-            speed_map = {"low": 1, "medium": 4, "high": 8}
+            speed_map = {"low": 1, "medium": 4, "high": 4}
             self.concurrency = speed_map.get(self.speed, 1)
             self.total_urls = 0
             self.completed_urls = 0
