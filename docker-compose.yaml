@@ -26,13 +26,6 @@ services:
     volumes:
       - webglancer_data:/app/.visual_cache
 
-      # Coolify creates this as a FILE before mounting it.
-      - type: bind
-        source: ./domain.txt
-        target: /app/domain.txt
-        content: |
-          ${DOMAIN_NAME:-}
-
     healthcheck:
       test:
         - CMD-SHELL
