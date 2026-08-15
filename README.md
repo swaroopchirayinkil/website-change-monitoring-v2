@@ -99,12 +99,12 @@ version: "3.8"
 services:
   webglancer:
     image: webglancer:latest
+    container_name: webglancer-app
     restart: unless-stopped
     ports:
       - "8087:8087"
     env_file:
-      - path: .env
-        required: false
+      - .env
     environment:
       - TZ=Asia/Kolkata
       - PYTHONUNBUFFERED=1
@@ -115,8 +115,8 @@ services:
     volumes:
       # Persist screenshots, history, schedule config, and audit logs
       - webglancer_data:/app/.visual_cache
-      # Persist domain target list
-      - ./domain.txt:/app/domain.txt:rw
+      # Persist domain target list (Use absolute path to domain.txt on host)
+      - /home/sky/Desktop/antigravity/website-change-monitoring-v2/domain.txt:/app/domain.txt:rw
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8087/login.html || exit 1"]
       interval: 30s

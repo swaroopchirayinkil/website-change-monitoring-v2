@@ -4,12 +4,12 @@ services:
       context: .
       dockerfile: Dockerfile
     image: webglancer:latest
+    container_name: webglancer-app
     restart: unless-stopped
     ports:
       - "8087:8087"
     env_file:
-      - path: .env
-        required: false
+      - .env
     environment:
       - TZ=Asia/Kolkata
       - PYTHONUNBUFFERED=1
@@ -21,9 +21,9 @@ services:
       # Persist baselines, latest checks, diff heatmaps, history, and schedule config
       - webglancer_data:/app/.visual_cache
       # Persist domain target list
-      - ./domain.txt:/app/domain.txt:rw
+      - /home/sky/Desktop/antigravity/website-change-monitoring-v2/domain.txt:/app/domain.txt:rw
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8087/login.html || exit 1"]
+      test: [ "CMD-SHELL", "curl -f http://localhost:8087/login.html || exit 1" ]
       interval: 30s
       timeout: 10s
       retries: 3
