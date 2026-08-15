@@ -104,7 +104,8 @@ services:
     ports:
       - "8087:8087"
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       - TZ=Asia/Kolkata
       - PYTHONUNBUFFERED=1
