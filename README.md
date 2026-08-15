@@ -99,7 +99,6 @@ version: "3.8"
 services:
   webglancer:
     image: webglancer:latest
-    container_name: webglancer-app
     restart: unless-stopped
     ports:
       - "8087:8087"
