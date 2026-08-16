@@ -21,7 +21,7 @@ services:
       # Persist baselines, latest checks, diff heatmaps, history, and schedule config
       - webglancer_data:/app/.visual_cache
       # Persist domain target list
-      - /home/sky/Desktop/antigravity/website-change-monitoring-v2/domain.txt:/app/domain.txt:rw
+      - ./domain.txt:/app/domain.txt:rw
     healthcheck:
       test: [ "CMD-SHELL", "curl -f http://localhost:8087/login.html || exit 1" ]
       interval: 30s

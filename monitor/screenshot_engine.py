@@ -24,7 +24,10 @@ def get_thread_browser():
     return _thread_local.browser
 
 def cleanup_all_browsers():
-    """Safely shut down all active thread-local Playwright browser instances."""
+    """Safely shut down all active thread-local Playwright browser instances and return memory to OS."""
+    import gc
+    import ctypes
+
     with _thread_browsers_lock:
         for pw, browser in _thread_browsers:
             try:
@@ -36,6 +39,18 @@ def cleanup_all_browsers():
             except Exception:
                 pass
         _thread_browsers.clear()
+
+    if hasattr(_thread_local, "playwright"):
+        delattr(_thread_local, "playwright")
+    if hasattr(_thread_local, "browser"):
+        delattr(_thread_local, "browser")
+
+    # Force Python garbage collection & trim heap memory back to Linux OS kernel
+    gc.collect()
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception:
+        pass
 
 def capture_screenshot(
     url: str,
