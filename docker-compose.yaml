@@ -7,9 +7,8 @@ services:
     restart: unless-stopped
     ports:
       - "8087:8087"
-    env_file:
-      - path: .env
-        required: false
+    # Shared memory allocation to prevent Playwright/Chromium crashes in Docker/Portainer
+    shm_size: '1gb'
     environment:
       - TZ=Asia/Kolkata
       - PYTHONUNBUFFERED=1
@@ -18,9 +17,9 @@ services:
       - HCAPTCHA_SITEKEY=${HCAPTCHA_SITEKEY:-56d027fa-471e-4af2-bf82-f8a453acb8e2}
       - HCAPTCHA_SECRET=${HCAPTCHA_SECRET}
     volumes:
-      # Persist baselines, latest checks, diff heatmaps, history, and schedule config
+      # Persist baselines, latest checks, diff heatmaps, history, domain.txt & schedule config
       - webglancer_data:/app/.visual_cache
-      # Persist domain target list
+      # Host bind mount for domain.txt (Optional for Git stacks; remove if deploying via Portainer Web Editor)
       - ./domain.txt:/app/domain.txt:rw
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8087/login.html || exit 1"]
@@ -33,3 +32,4 @@ volumes:
   webglancer_data:
     driver: local
     name: webglancer_data
+

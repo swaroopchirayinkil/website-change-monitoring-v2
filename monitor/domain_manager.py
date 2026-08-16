@@ -28,7 +28,7 @@ def url_to_slug(url: str) -> str:
 
 def load_urls_from_file(file_path: Path = DEFAULT_DOMAIN_FILE) -> list[str]:
     """Read URLs from a text file, ignoring empty lines and comments."""
-    if not file_path.exists():
+    if not file_path.exists() or not file_path.is_file():
         return []
     lines = file_path.read_text(encoding="utf-8").splitlines()
     return [normalize_url(line) for line in lines if line.strip() and not line.strip().startswith("#")]
@@ -60,11 +60,14 @@ def add_domains_to_file(
             existing_set.add(key)
             
     if added_urls:
-        content = target_file.read_text(encoding="utf-8") if target_file.exists() else ""
+        content = ""
+        if target_file.exists() and target_file.is_file():
+            content = target_file.read_text(encoding="utf-8")
         if content and not content.endswith("\n"):
             content += "\n"
         new_content = content + "\n".join(added_urls) + "\n"
-        target_file.write_text(new_content, encoding="utf-8")
+        if not target_file.is_dir():
+            target_file.write_text(new_content, encoding="utf-8")
         
     return added_urls, duplicate_urls
 
@@ -76,7 +79,7 @@ def remove_domains_from_file(
     Remove specified domains from target domain file and delete associated baseline/latest/diff cache files.
     Returns list of removed URLs.
     """
-    if not target_file.exists():
+    if not target_file.exists() or not target_file.is_file():
         return []
         
     existing_urls = load_urls_from_file(target_file)
@@ -102,6 +105,7 @@ def remove_domains_from_file(
             
     if removed_urls:
         new_content = "\n".join(remaining_urls) + ("\n" if remaining_urls else "")
-        target_file.write_text(new_content, encoding="utf-8")
+        if not target_file.is_dir():
+            target_file.write_text(new_content, encoding="utf-8")
         
     return removed_urls
