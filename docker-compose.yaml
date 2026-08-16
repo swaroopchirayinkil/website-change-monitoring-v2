@@ -19,8 +19,6 @@ services:
     volumes:
       # Persist baselines, latest checks, diff heatmaps, history, domain.txt & schedule config
       - webglancer_data:/app/.visual_cache
-      # Host bind mount for domain.txt (Optional for Git stacks; remove if deploying via Portainer Web Editor)
-      - ./domain.txt:/app/domain.txt:rw
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8087/login.html || exit 1"]
       interval: 30s
