@@ -8,6 +8,10 @@ services:
 
     restart: unless-stopped
 
+    # Resource limits to prevent memory accumulation and process leaks
+    mem_limit: 2g
+    pids_limit: 200
+
     ports:
       - "8087:8087"
 
