@@ -18,8 +18,10 @@ except ImportError:
 
 from monitor.config import CACHE_DIR, ensure_dirs, REPORT_FILE
 from monitor.scan_manager import scan_manager, build_combined_report_results
+from monitor.screenshot_engine import trim_memory
 
 SCHEDULE_CONFIG_FILE = CACHE_DIR / "schedule_config.json"
+
 
 DEFAULT_SCHEDULE = {
     "enabled": False,
@@ -170,9 +172,14 @@ class SchedulerManager:
 
     def _loop(self, report_generator=None):
         """Main background scheduler polling loop."""
+        idle_ticks = 0
         while self.running:
             try:
                 time.sleep(5)
+                idle_ticks += 1
+                if idle_ticks % 12 == 0:  # Every ~60 seconds when idle
+                    trim_memory()
+
                 with self.lock:
                     cfg = dict(self.config)
 
@@ -206,6 +213,7 @@ class SchedulerManager:
                     )
             except Exception as e:
                 time.sleep(5)
+
 
 
 scheduler_manager = SchedulerManager()

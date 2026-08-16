@@ -15,8 +15,9 @@ def compute_visual_diff(
     threshold_percent: float = 0.1,
 ) -> dict:
     """Compare baseline and latest screenshots pixel-by-pixel."""
-    img_base = Image.open(baseline_path).convert("RGB")
-    img_live = Image.open(latest_path).convert("RGB")
+    with Image.open(baseline_path) as b_file, Image.open(latest_path) as l_file:
+        img_base = b_file.convert("RGB")
+        img_live = l_file.convert("RGB")
 
     width = max(img_base.width, img_live.width)
     height = max(img_base.height, img_live.height)
@@ -25,20 +26,24 @@ def compute_visual_diff(
     if img_base.size != (width, height):
         padded = Image.new("RGB", (width, height), (255, 255, 255))
         padded.paste(img_base, (0, 0))
+        img_base.close()
         img_base = padded
 
     if img_live.size != (width, height):
         padded = Image.new("RGB", (width, height), (255, 255, 255))
         padded.paste(img_live, (0, 0))
+        img_live.close()
         img_live = padded
 
     # Compute absolute RGB difference
     diff_raw = ImageChops.difference(img_base, img_live)
     gray_diff = diff_raw.convert("L")
+    diff_raw.close()
 
     # Filter minor noise/anti-aliasing (threshold < 15 out of 255)
     noise_cutoff = 15
     mask = gray_diff.point(lambda p: 255 if p > noise_cutoff else 0, mode="1")
+    gray_diff.close()
 
     histogram = mask.histogram()
     changed_pixels = histogram[255] if len(histogram) > 255 else 0
@@ -46,12 +51,23 @@ def compute_visual_diff(
     percentage = (changed_pixels / total_pixels) * 100.0 if total_pixels > 0 else 0.0
 
     # Generate visual heatmap (bright magenta highlight on dimmed baseline)
-    enhancer = ImageEnhance.Brightness(img_base.convert("L").convert("RGB"))
+    base_gray = img_base.convert("L").convert("RGB")
+    enhancer = ImageEnhance.Brightness(base_gray)
     dimmed_baseline = enhancer.enhance(0.4)
-    highlight_color = Image.new("RGB", (width, height), (255, 0, 110))
+    base_gray.close()
 
+    highlight_color = Image.new("RGB", (width, height), (255, 0, 110))
     visual_heatmap = Image.composite(highlight_color, dimmed_baseline, mask)
+
     visual_heatmap.save(diff_path)
+
+    # Clean up remaining Pillow image objects
+    img_base.close()
+    img_live.close()
+    mask.close()
+    highlight_color.close()
+    dimmed_baseline.close()
+    visual_heatmap.close()
 
     is_changed = percentage > threshold_percent
 
@@ -63,3 +79,4 @@ def compute_visual_diff(
         "percentage": round(percentage, 4),
         "is_changed": is_changed,
     }
+

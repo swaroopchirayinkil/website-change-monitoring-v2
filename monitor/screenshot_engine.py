@@ -1,10 +1,5 @@
-# -*- coding: utf-8 -*-
-"""
-monitor/screenshot_engine.py
------------------------------
-Playwright headless Chromium browser lifecycle management and SPA screenshot capture.
-"""
-
+import gc
+import ctypes
 import threading
 import time
 from pathlib import Path
@@ -14,9 +9,18 @@ _thread_local = threading.local()
 _thread_browsers = []
 _thread_browsers_lock = threading.Lock()
 
+def trim_memory():
+    """Force Python garbage collection and trim Linux glibc malloc heap memory back to OS kernel."""
+    gc.collect()
+    try:
+        libc = ctypes.CDLL("libc.so.6")
+        libc.malloc_trim(0)
+    except Exception:
+        pass
+
 def get_thread_browser():
     """Retrieve or initialize a thread-local Playwright browser instance to maximize scanning throughput."""
-    if not hasattr(_thread_local, "playwright"):
+    if not hasattr(_thread_local, "playwright") or not hasattr(_thread_local, "browser"):
         _thread_local.playwright = sync_playwright().start()
         _thread_local.browser = _thread_local.playwright.chromium.launch(headless=True)
         with _thread_browsers_lock:
@@ -24,7 +28,7 @@ def get_thread_browser():
     return _thread_local.browser
 
 def cleanup_all_browsers():
-    """Safely shut down all active thread-local Playwright browser instances."""
+    """Safely shut down all active thread-local Playwright browser instances and trim OS heap memory."""
     with _thread_browsers_lock:
         for pw, browser in _thread_browsers:
             try:
@@ -36,6 +40,14 @@ def cleanup_all_browsers():
             except Exception:
                 pass
         _thread_browsers.clear()
+
+    # Clear attributes on current thread local storage if present
+    if hasattr(_thread_local, "playwright"):
+        delattr(_thread_local, "playwright")
+    if hasattr(_thread_local, "browser"):
+        delattr(_thread_local, "browser")
+
+    trim_memory()
 
 def capture_screenshot(
     url: str,
@@ -58,6 +70,7 @@ def capture_screenshot(
         browser = pw.chromium.launch(headless=True)
         should_close_browser = True
 
+    context = None
     try:
         context = browser.new_context(
             viewport={"width": viewport_width, "height": viewport_height},
@@ -93,9 +106,20 @@ def capture_screenshot(
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         page.screenshot(path=str(output_path), full_page=full_page)
-        context.close()
     finally:
+        if context:
+            try:
+                context.close()
+            except Exception:
+                pass
         if should_close_browser:
-            browser.close()
+            try:
+                browser.close()
+            except Exception:
+                pass
             if pw:
-                pw.stop()
+                try:
+                    pw.stop()
+                except Exception:
+                    pass
+

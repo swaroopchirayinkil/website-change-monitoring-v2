@@ -239,8 +239,23 @@ def verify_hcaptcha_token(token: str, remote_ip: str = None) -> tuple[bool, str]
         return False, f"Failed to connect to hCaptcha verification service: {str(e)}"
 
 
+def purge_expired_sessions_and_attempts():
+    """Purge expired session tokens and expired IP lockout records from RAM."""
+    now = time.time()
+    expired_sessions = [k for k, exp in SESSIONS.items() if now > exp]
+    for k in expired_sessions:
+        SESSIONS.pop(k, None)
+
+    expired_ips = [
+        ip for ip, rec in FAILED_ATTEMPTS.items()
+        if rec.get("lockout_until", 0) > 0 and now >= rec.get("lockout_until", 0)
+    ]
+    for ip in expired_ips:
+        FAILED_ATTEMPTS.pop(ip, None)
+
 def create_session() -> str:
     """Generate a new session token and store its expiration time."""
+    purge_expired_sessions_and_attempts()
     token = str(uuid.uuid4())
     SESSIONS[token] = time.time() + SESSION_DURATION_SECONDS
     return token
@@ -254,12 +269,14 @@ def invalidate_session(token: str):
 
 def is_valid_session(token: str) -> bool:
     """Check if a session token is active and not expired."""
+    purge_expired_sessions_and_attempts()
     if not token or token not in SESSIONS:
         return False
     if time.time() > SESSIONS[token]:
         del SESSIONS[token]
         return False
     return True
+
 
 
 def get_session_from_headers(headers) -> str:

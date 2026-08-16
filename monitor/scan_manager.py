@@ -12,7 +12,7 @@ from pathlib import Path
 
 from monitor.config import BASELINES_DIR, LATEST_DIR, DIFFS_DIR, DEFAULT_DOMAIN_FILE
 from monitor.domain_manager import load_urls_from_file, normalize_url, url_to_slug
-from monitor.screenshot_engine import get_thread_browser, cleanup_all_browsers, capture_screenshot
+from monitor.screenshot_engine import get_thread_browser, cleanup_all_browsers, capture_screenshot, trim_memory
 from monitor.diff_engine import compute_visual_diff
 from monitor.retention_manager import get_baseline_timestamp_display
 
@@ -240,6 +240,8 @@ class ScanManager:
                             "msg": f"{url[:40]} | {msg}",
                             "timestamp": time.strftime("%H:%M:%S")
                         })
+                        if len(self.logs) > 200:
+                            self.logs = self.logs[-200:]
                     return res
 
                 try:
@@ -327,6 +329,8 @@ class ScanManager:
                             "msg": f"{url[:40]} | {res['status']} ({pct_info})",
                             "timestamp": time.strftime("%H:%M:%S")
                         })
+                        if len(self.logs) > 200:
+                            self.logs = self.logs[-200:]
                     return res
 
                 try:
@@ -351,6 +355,8 @@ class ScanManager:
                 self.is_running = False
                 self.error = str(ex)
                 self.status_message = f"Error: {ex}"
+        finally:
+            trim_memory()
 
     def get_state(self):
         with self.lock:
@@ -369,3 +375,4 @@ class ScanManager:
             }
 
 scan_manager = ScanManager()
+
