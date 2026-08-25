@@ -8,6 +8,7 @@ ENV/
 .visual_cache/
 .website_change_cache/
 report.html
+docker_stats.log
 
 # Environment variables & secrets
 .env

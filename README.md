@@ -56,8 +56,9 @@ The application includes enterprise-grade security features for deployment via P
 - Protected endpoint `GET /api/login-logs` provides real-time audit log access.
 
 ### 5. Secure Secret Management (DevSecOps Best Practice)
-- Secrets are **never hardcoded** in container image layers (`Dockerfile`).
-- Managed dynamically via `.env` file and container runtime environment variables.
+- Credentials are managed via `.env` file and container runtime environment variables.
+- **⚠️ Important:** Default fallback values (`admin` / `admin123`) are active if `ADMIN_USERNAME` / `ADMIN_PASSWORD` env vars are not set. Always set strong credentials in production.
+- **⚠️ Important:** If `HCAPTCHA_SECRET` is not set, CAPTCHA verification is silently bypassed.
 
 ---
 
@@ -91,32 +92,29 @@ docker-compose logs -f
 
 ### 3. Portainer Stack Blueprint
 
-In **Portainer** → **Stacks** → **Add Stack**, paste the following configuration:
+In **Portainer** → **Stacks** → **Add Stack**, use **Git Repository** with the `final-testing` branch, or paste the following configuration directly. Set environment variables in the Portainer stack editor (do not use `env_file` in Portainer):
 
 ```yaml
-version: "3.8"
-
 services:
   webglancer:
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: webglancer:latest
     restart: unless-stopped
     ports:
       - "8087:8087"
-    env_file:
-      - path: .env
-        required: false
+    shm_size: '1gb'
     environment:
       - TZ=Asia/Kolkata
       - PYTHONUNBUFFERED=1
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
-      - HCAPTCHA_SITEKEY=${HCAPTCHA_SITEKEY}
+      - HCAPTCHA_SITEKEY=${HCAPTCHA_SITEKEY:-56d027fa-471e-4af2-bf82-f8a453acb8e2}
       - HCAPTCHA_SECRET=${HCAPTCHA_SECRET}
     volumes:
-      # Persist screenshots, history, schedule config, and audit logs
+      # All persistent state: screenshots, reports, domain list, schedule config, audit logs
       - webglancer_data:/app/.visual_cache
-      # Persist domain target list
-      - ./domain.txt:/app/domain.txt:rw
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8087/login.html || exit 1"]
       interval: 30s
@@ -126,8 +124,11 @@ services:
 
 volumes:
   webglancer_data:
+    driver: local
     name: webglancer_data
 ```
+
+> **Note:** `shm_size: '1gb'` is required — Chromium crashes without sufficient shared memory.
 
 ---
 
@@ -167,33 +168,45 @@ python visual_change_detector.py serve --port 8087
 ## 📁 Directory Structure & Persistence
 
 ```
-website-change-monitoring/
-├── visual_change_detector.py    # Playwright & Pillow Visual Change Monitor + Web Server
-├── website_change_detect.py     # Requests & BeautifulSoup HTML Structural Monitor
+website-change-monitoring-v2/
+├── visual_change_detector.py    # CLI entry point (serve / update / check / add / remove)
+├── website_change_detect.py     # Legacy standalone DOM-text diff tool (not integrated with server)
 ├── requirements.txt             # Python package dependencies
-├── domain.txt                   # Monitored domain target file
+├── domain.txt                   # Seed domain list (copied to volume on first boot)
 ├── Dockerfile                   # Production Docker image build recipe
-├── docker-compose.yml           # Docker Compose orchestration blueprint
+├── docker-compose.yaml          # Docker Compose / Portainer orchestration
 ├── .env.example                 # Environment configuration template
 ├── .env                         # Local runtime secrets (Git ignored)
-├── monitor/                     # Application Package Core
-│   ├── auth.py                  # Session handling, hCaptcha, Rate Limiting & Audit Logger
-│   ├── server.py                # HTTP Server Handler & REST API Router
-│   ├── scan_manager.py          # Parallel worker pool manager
-│   ├── retention_manager.py     # Daily report & 30-day log retention pruner
-│   ├── scheduler.py             # Persistent daily background scanner
-│   └── web/                     # Web Frontend Templates & Assets
-│       ├── login.html           # Dark-mode glassmorphism login UI
-│       ├── index.html           # Dashboard template
-│       ├── styles.css           # UI Design System CSS
-│       └── app.js               # Frontend JavaScript controller
-└── .visual_cache/               # Persistent volume mount path
+├── docs/                        # Developer & AI agent documentation
+│   ├── ARCHITECTURE.md
+│   ├── PROJECT_STATE.md
+│   ├── DECISIONS.md
+│   ├── DEVELOPMENT.md
+│   └── TROUBLESHOOTING.md
+├── monitor/                     # Application package
+│   ├── config.py                # Centralized path constants (single source of truth)
+│   ├── auth.py                  # Sessions, hCaptcha, rate limiting & audit log
+│   ├── server.py                # HTTP server handler & REST API router
+│   ├── scan_manager.py          # Thread-safe scan state machine & worker pool
+│   ├── screenshot_engine.py     # Playwright browser lifecycle & capture
+│   ├── diff_engine.py           # Pillow pixel-diff & magenta heatmap generation
+│   ├── domain_manager.py        # URL CRUD, normalization, SHA-256 slug, domain.txt I/O
+│   ├── retention_manager.py     # 5-day report & 30-day audit log retention
+│   ├── scheduler.py             # Background daemon scheduler (5s poll loop)
+│   └── web/                     # Frontend assets
+│       ├── login.html           # Self-contained login page (inline CSS + JS)
+│       ├── index.html           # Dashboard template (Python str.format() placeholders)
+│       ├── styles.css           # Dashboard styles
+│       └── app.js               # Frontend controller (670 lines)
+└── .visual_cache/               # Docker volume mount (webglancer_data → /app/.visual_cache)
+    ├── domain.txt               # Active monitored URL list (managed via web UI)
     ├── baselines/               # Reference baseline screenshots (.png)
-    ├── latest/                  # Live screenshots (.png)
-    ├── diffs/                   # Visual diff heatmaps (.png)
-    ├── history/                 # 5-day daily report archives (.html)
-    ├── login_audit.log          # 30-day persistent login audit log
-    └── schedule_config.json     # Saved background schedule configuration
+    ├── latest/                  # Most recent live screenshots (.png)
+    ├── diffs/                   # Visual diff heatmaps — magenta highlight (.png)
+    ├── report.html              # Live dashboard report (overwritten each scan)
+    ├── report_YYYY-MM-DD.html   # Daily archived reports (5-day rolling window)
+    ├── login_audit.log          # Login audit trail (30-day rolling window)
+    └── schedule_config.json     # Scheduler configuration (persists across restarts)
 ```
 
 ---
