@@ -9,6 +9,7 @@ Supports specific daily times (with AM/PM and Timezone selection) or periodic in
 import json
 import threading
 import time
+import traceback
 from datetime import datetime, timedelta
 from pathlib import Path
 try:
@@ -71,11 +72,16 @@ class SchedulerManager:
                 except Exception:
                     pass
 
+    # Keys that the frontend is allowed to set via POST /api/schedule
+    _ALLOWED_CONFIG_KEYS = {"enabled", "frequency", "hour", "minute", "ampm", "timezone", "speed"}
+
     def save_config(self, new_config: dict):
         """Save schedule configuration to disk and reload schedule state."""
         ensure_dirs()
+        # Only merge whitelisted keys to prevent injection of last_run or unknown fields
+        sanitized = {k: v for k, v in new_config.items() if k in self._ALLOWED_CONFIG_KEYS}
         with self.lock:
-            self.config.update(new_config)
+            self.config.update(sanitized)
             SCHEDULE_CONFIG_FILE.write_text(json.dumps(self.config, indent=2), encoding="utf-8")
 
     def get_status(self) -> dict:
@@ -179,18 +185,18 @@ class SchedulerManager:
                 if not cfg.get("enabled"):
                     continue
 
-                if scan_manager.is_running:
+                # Read is_running under scan_manager.lock for thread safety
+                with scan_manager.lock:
+                    scan_active = scan_manager.is_running
+
+                if scan_active:
                     continue
 
                 if self._is_due(cfg):
                     tz_name = cfg.get("timezone", "UTC")
                     now = self._get_current_now(tz_name)
-                    
-                    with self.lock:
-                        self.config["last_run"] = now.isoformat()
-                        SCHEDULE_CONFIG_FILE.write_text(json.dumps(self.config, indent=2), encoding="utf-8")
 
-                    print(f"⏰ [Scheduler] Triggering scheduled live visual check pass at {now.strftime('%Y-%m-%d %I:%M:%S %p %Z')}...")
+                    print(f"⏰ [Scheduler] Triggering scheduled live visual check pass at {now.strftime('%Y-%m-%d %I:%M:%S %p %Z')}...", flush=True)
 
                     def _wrapper(results):
                         if report_generator:
@@ -199,12 +205,27 @@ class SchedulerManager:
                             from monitor.server import generate_html_report
                             generate_html_report(results, REPORT_FILE)
 
-                    scan_manager.start_scan(
+                    success, msg = scan_manager.start_scan(
                         action="check",
                         speed=cfg.get("speed", "low"),
                         report_generator=_wrapper
                     )
+
+                    if success:
+                        # Only persist last_run AFTER confirming the scan actually started
+                        with self.lock:
+                            self.config["last_run"] = now.isoformat()
+                            SCHEDULE_CONFIG_FILE.write_text(json.dumps(self.config, indent=2), encoding="utf-8")
+                        print(f"⏰ [Scheduler] Scan started successfully. last_run saved: {now.isoformat()}", flush=True)
+                    else:
+                        # Scan could not start (e.g., another scan already running)
+                        # Do NOT update last_run — scheduler will retry on next poll
+                        print(f"⚠️ [Scheduler] Scan could not start: {msg}. Will retry on next poll cycle.", flush=True)
+
             except Exception as e:
+                # Log the full error so scheduler failures are visible in Docker logs
+                print(f"❌ [Scheduler] Error in scheduler loop: {e}", flush=True)
+                traceback.print_exc()
                 time.sleep(5)
 
 
