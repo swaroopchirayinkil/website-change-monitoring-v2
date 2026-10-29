@@ -965,3 +965,365 @@ body {
     color: #ffffff;
 }
 
+/* ==============================================================================
+   Periodic Reports (Daily / Weekly / Monthly / Custom) Styles
+   ============================================================================== */
+
+.btn-periodic-reports {
+    background: linear-gradient(135deg, #0284c7, #0369a1);
+    color: #ffffff;
+    box-shadow: 0 4px 12px rgba(2, 132, 199, 0.25);
+}
+.btn-periodic-reports:hover:not(:disabled) {
+    background: linear-gradient(135deg, #0369a1, #075985);
+    box-shadow: 0 6px 18px rgba(2, 132, 199, 0.35);
+}
+
+.periodic-reports-card {
+    background: var(--bg-card);
+    border: 1.5px solid #0284c7;
+    border-radius: 16px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 8px 30px rgba(2, 132, 199, 0.08);
+    animation: slideDown 0.3s ease-out;
+}
+.periodic-reports-card.hidden {
+    display: none;
+}
+
+.periodic-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 1rem;
+    margin-bottom: 1.25rem;
+}
+
+.periodic-controls-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: center;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 1rem;
+    margin-bottom: 1.25rem;
+}
+
+.preset-buttons-group {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.preset-chip {
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    color: #334155;
+    padding: 0.4rem 0.85rem;
+    border-radius: 20px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.preset-chip:hover {
+    border-color: #0284c7;
+    color: #0284c7;
+    background: #f0f9ff;
+}
+.preset-chip.active {
+    background: #0284c7;
+    border-color: #0284c7;
+    color: #ffffff;
+    box-shadow: 0 2px 8px rgba(2, 132, 199, 0.3);
+}
+
+.date-picker-group {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    width: 100%;
+}
+
+.date-input-wrap {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #475569;
+}
+
+.date-input {
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 0.4rem 0.65rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #1e293b;
+    outline: none;
+    transition: border-color 0.2s;
+}
+.date-input:focus {
+    border-color: #0284c7;
+    box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
+}
+
+.btn-periodic-run {
+    background: #0284c7;
+    color: #ffffff;
+    padding: 0.45rem 1.15rem;
+    font-size: 0.85rem;
+    border-radius: 8px;
+    font-weight: 800;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(2, 132, 199, 0.25);
+    transition: all 0.2s ease;
+}
+.btn-periodic-run:hover:not(:disabled) {
+    background: #0369a1;
+}
+
+.btn-export {
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    color: #1e293b;
+    padding: 0.4rem 0.85rem;
+    border-radius: 8px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    transition: all 0.2s;
+}
+.btn-export:hover:not(:disabled) {
+    background: #f1f5f9;
+    border-color: #94a3b8;
+}
+
+.periodic-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+}
+
+.periodic-kpi-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 1rem;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+}
+.periodic-kpi-card .kpi-label {
+    font-size: 0.75rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    color: #64748b;
+    letter-spacing: 0.04em;
+}
+.periodic-kpi-card .kpi-value {
+    font-size: 1.6rem;
+    font-weight: 800;
+    margin-top: 0.25rem;
+    color: #0f172a;
+}
+.periodic-kpi-card.kpi-changed .kpi-value {
+    color: #ea580c;
+}
+.periodic-kpi-card.kpi-unchanged .kpi-value {
+    color: #059669;
+}
+.periodic-kpi-card.kpi-avg .kpi-value {
+    color: #0284c7;
+}
+
+/* Periodic Report Info Bar */
+.periodic-info-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: center;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 0.75rem 1rem;
+    margin-top: 1rem;
+}
+
+.periodic-info-bar .info-badge {
+    font-size: 0.82rem;
+    color: #475569;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    padding: 0.3rem 0.65rem;
+}
+
+.periodic-info-bar .info-badge strong {
+    color: #0f172a;
+    font-weight: 700;
+}
+
+/* Daily Change Percentage Matrix Table */
+.daily-matrix-table {
+    border-collapse: separate;
+    border-spacing: 0;
+    width: 100%;
+}
+
+.daily-matrix-table th {
+    background: #f5f3ef;
+    color: #44403c;
+    font-weight: 800;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0.75rem 0.6rem;
+    border-bottom: 2px solid #e5e2db;
+    white-space: nowrap;
+}
+
+.daily-matrix-table td {
+    padding: 0.65rem 0.6rem;
+    border-bottom: 1px solid #f1efe9;
+    font-size: 0.82rem;
+    white-space: nowrap;
+}
+
+.matrix-pct-changed {
+    display: inline-block;
+    padding: 0.2rem 0.55rem;
+    background: #fff7ed;
+    border: 1px solid #fed7aa;
+    color: #ea580c;
+    font-weight: 800;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    letter-spacing: -0.01em;
+}
+
+.matrix-pct-unchanged {
+    display: inline-block;
+    padding: 0.2rem 0.55rem;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    color: #16a34a;
+    font-weight: 700;
+    border-radius: 6px;
+    font-size: 0.82rem;
+}
+
+.matrix-pct-failed {
+    display: inline-block;
+    padding: 0.2rem 0.55rem;
+    background: #fef2f2;
+    border: 1px solid #fca5a5;
+    color: #dc2626;
+    font-weight: 700;
+    border-radius: 6px;
+    font-size: 0.78rem;
+}
+
+/* Timeline pill breakdown in table */
+.timeline-pills {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.timeline-dot {
+    display: inline-block;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    text-align: center;
+    line-height: 22px;
+    font-size: 0.65rem;
+    font-weight: 800;
+    color: #ffffff;
+    cursor: default;
+    transition: transform 0.15s;
+}
+.timeline-dot:hover {
+    transform: scale(1.2);
+}
+.timeline-dot.dot-changed {
+    background: #ea580c;
+}
+.timeline-dot.dot-unchanged {
+    background: #10b981;
+}
+.timeline-dot.dot-failed {
+    background: #ef4444;
+}
+.timeline-dot.dot-nodata {
+    background: #cbd5e1;
+    color: #64748b;
+}
+
+/* Specific styling for period status pill matching the user's screenshot */
+.badge-period-changed {
+    background: #fff7ed;
+    border: 1.5px solid #fb923c;
+    color: #ea580c;
+    font-weight: 800;
+    border-radius: 9999px;
+    padding: 0.25rem 0.85rem;
+    display: inline-block;
+    text-transform: uppercase;
+    font-size: 0.78rem;
+    letter-spacing: 0.03em;
+}
+
+.badge-period-unchanged {
+    background: #f0fdf4;
+    border: 1.5px solid #86efac;
+    color: #16a34a;
+    font-weight: 800;
+    border-radius: 9999px;
+    padding: 0.25rem 0.85rem;
+    display: inline-block;
+    text-transform: uppercase;
+    font-size: 0.78rem;
+    letter-spacing: 0.03em;
+}
+
+.badge-period-failed {
+    background: #fef2f2;
+    border: 1.5px solid #fca5a5;
+    color: #dc2626;
+    font-weight: 800;
+    border-radius: 9999px;
+    padding: 0.25rem 0.85rem;
+    display: inline-block;
+    text-transform: uppercase;
+    font-size: 0.78rem;
+    letter-spacing: 0.03em;
+}
+
+.badge-period-nodata {
+    background: #f1f5f9;
+    border: 1.5px solid #cbd5e1;
+    color: #64748b;
+    font-weight: 800;
+    border-radius: 9999px;
+    padding: 0.25rem 0.85rem;
+    display: inline-block;
+    text-transform: uppercase;
+    font-size: 0.78rem;
+    letter-spacing: 0.03em;
+}
+
+

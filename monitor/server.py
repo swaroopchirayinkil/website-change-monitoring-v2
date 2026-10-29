@@ -8,11 +8,23 @@ HTTP Server Handler and REST API routing for WebGlancer with Session & hCaptcha 
 import http.server
 import json
 import socketserver
+import urllib.parse
 import webbrowser
 from datetime import datetime, date
 from pathlib import Path
 
 from monitor.config import CACHE_DIR, REPORT_FILE, DEFAULT_DOMAIN_FILE, WEB_DIR, ensure_dirs
+from monitor.domain_manager import url_to_slug, add_domains_to_file, remove_domains_from_file
+from monitor.scan_manager import scan_manager, build_combined_report_results
+from monitor.retention_manager import cleanup_old_reports, get_historical_reports
+from monitor.scheduler import scheduler_manager
+from monitor.history_manager import (
+    record_daily_scan_data,
+    seed_history_from_existing_reports,
+    get_available_history_dates,
+    generate_periodic_report,
+    export_report_csv,
+)
 from monitor.domain_manager import url_to_slug, add_domains_to_file, remove_domains_from_file
 from monitor.scan_manager import scan_manager, build_combined_report_results
 from monitor.retention_manager import cleanup_old_reports, get_historical_reports
@@ -81,6 +93,12 @@ def generate_html_report(results: list[dict], output_path: Path = REPORT_FILE):
     daily_archived_report = CACHE_DIR / f"report_{today_str}.html"
     daily_archived_report.write_text(html_content, encoding="utf-8")
 
+    # Automatically persist structured daily JSON history record
+    try:
+        record_daily_scan_data(results, scan_date=today_str)
+    except Exception as e:
+        print(f"[HISTORY] [ERROR] Failed to record daily JSON scan data: {e}", flush=True)
+
 
 class MonitoringRequestHandler(http.server.SimpleHTTPRequestHandler):
     """Custom HTTP Handler serving Dashboard UI, Authentication, and REST API endpoints."""
@@ -101,8 +119,12 @@ class MonitoringRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
+        parsed_url = urllib.parse.urlparse(self.path)
+        path = parsed_url.path
+        query_params = urllib.parse.parse_qs(parsed_url.query)
+
         # 1. PUBLIC ENDPOINTS (No authentication required)
-        if self.path in ["/login", "/login.html"]:
+        if path in ["/login", "/login.html"]:
             login_path = WEB_DIR / "login.html"
             if login_path.exists():
                 content = login_path.read_bytes()
@@ -113,17 +135,17 @@ class MonitoringRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(content)
                 return
 
-        if self.path == "/api/hcaptcha-config":
+        if path == "/api/hcaptcha-config":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps({"sitekey": get_hcaptcha_sitekey()}).encode("utf-8"))
             return
 
-        if self.path in ["/styles.css", "/app.js"]:
-            asset_path = WEB_DIR / self.path.lstrip("/")
+        if path in ["/styles.css", "/app.js"]:
+            asset_path = WEB_DIR / path.lstrip("/")
             if asset_path.exists():
-                content_type = "text/css" if self.path.endswith(".css") else "application/javascript"
+                content_type = "text/css" if path.endswith(".css") else "application/javascript"
                 content = asset_path.read_bytes()
                 self.send_response(200)
                 self.send_header("Content-Type", content_type)
@@ -135,7 +157,7 @@ class MonitoringRequestHandler(http.server.SimpleHTTPRequestHandler):
         # 2. SESSION AUTHENTICATION CHECK
         session_token = get_session_from_headers(self.headers)
         if not is_valid_session(session_token):
-            if self.path.startswith("/api/"):
+            if path.startswith("/api/"):
                 self.send_response(401)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
@@ -149,14 +171,14 @@ class MonitoringRequestHandler(http.server.SimpleHTTPRequestHandler):
                 return
 
         # 3. PROTECTED ENDPOINTS (Valid Session Verified)
-        if self.path in ["/", "/index.html"]:
+        if path in ["/", "/index.html"]:
             self.send_response(302)
             self.send_header("Location", "/report.html")
             self.end_headers()
             return
 
         # REST API: Status Endpoint
-        if self.path == "/api/status":
+        if path == "/api/status":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
@@ -164,8 +186,8 @@ class MonitoringRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps(state).encode("utf-8"))
             return
 
-        # REST API: History Endpoint
-        if self.path == "/api/history":
+        # REST API: History Endpoint (Daily HTML Archives)
+        if path == "/api/history":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
@@ -173,8 +195,58 @@ class MonitoringRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps({"reports": reports}).encode("utf-8"))
             return
 
+        # REST API: Available Historical Dates Endpoint
+        if path == "/api/reports/history-dates":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            dates = get_available_history_dates()
+            self.wfile.write(json.dumps({"dates": dates}).encode("utf-8"))
+            return
+
+        # REST API: Generate On-Demand Periodic Report Endpoint
+        if path == "/api/reports/generate":
+            period = query_params.get("period", ["weekly"])[0]
+            start_date = query_params.get("start_date", [None])[0]
+            end_date = query_params.get("end_date", [None])[0]
+            report = generate_periodic_report(period=period, start_date=start_date, end_date=end_date)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(json.dumps(report).encode("utf-8"))
+            return
+
+        # REST API: Export Periodic Report (CSV or JSON) Endpoint
+        if path == "/api/reports/export":
+            fmt = query_params.get("format", ["csv"])[0].lower()
+            period = query_params.get("period", ["weekly"])[0]
+            start_date = query_params.get("start_date", [None])[0]
+            end_date = query_params.get("end_date", [None])[0]
+            report = generate_periodic_report(period=period, start_date=start_date, end_date=end_date)
+
+            if fmt == "csv":
+                csv_data = export_report_csv(report).encode("utf-8")
+                filename = f"webglancer_report_{period}_{report['start_date']}_to_{report['end_date']}.csv"
+                self.send_response(200)
+                self.send_header("Content-Type", "text/csv; charset=utf-8")
+                self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+                self.send_header("Content-Length", str(len(csv_data)))
+                self.end_headers()
+                self.wfile.write(csv_data)
+                return
+            else:
+                json_data = json.dumps(report, indent=2).encode("utf-8")
+                filename = f"webglancer_report_{period}_{report['start_date']}_to_{report['end_date']}.json"
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+                self.send_header("Content-Length", str(len(json_data)))
+                self.end_headers()
+                self.wfile.write(json_data)
+                return
+
         # REST API: Login Audit Logs Endpoint
-        if self.path == "/api/login-logs":
+        if path == "/api/login-logs":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
@@ -183,7 +255,7 @@ class MonitoringRequestHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         # REST API: Schedule GET Endpoint
-        if self.path == "/api/schedule":
+        if path == "/api/schedule":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
@@ -389,6 +461,7 @@ class MonitoringRequestHandler(http.server.SimpleHTTPRequestHandler):
 def run_server(host: str = "0.0.0.0", port: int = 8000, open_browser: bool = True):
     """Start the interactive Web Dashboard & REST API server."""
     ensure_dirs()
+    seed_history_from_existing_reports()
     if not REPORT_FILE.exists():
         combined = build_combined_report_results()
         generate_html_report(combined, REPORT_FILE)

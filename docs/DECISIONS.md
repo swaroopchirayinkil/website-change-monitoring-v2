@@ -65,3 +65,20 @@
 
 ## D14 — `playwright install chromium` in Dockerfile despite base image
 **Current state:** This is technical debt (TD6). The base image `mcr.microsoft.com/playwright/python:v1.40.0-jammy` already includes Chromium. The redundant install was added to guarantee version consistency but adds ~200MB to build time.
+
+## D15 — Structured Daily JSON History (`.visual_cache/history/`)
+**Decision:** Store daily scan results as structured JSON files (`report_YYYY-MM-DD.json`) instead of parsing HTML archives for historical trends.  
+**Why:** Machine-readable, zero-overhead querying, and backfill capability from existing HTML snapshots via regex parsing of `window.initialReportData`.  
+**Storage location:** `.visual_cache/history/` inside the `webglancer_data` volume.
+
+## D16 — Day-by-Day Percentage Matrix over Aggregate Statistics
+**Decision:** In periodic reports (Weekly / Monthly / Custom), replace aggregated statistical fields (Period Status, Avg Mismatch, Peak Mismatch, Days Changed, Daily Timeline) with an explicit date-by-date percentage change matrix.  
+**Why:** Users require exact day-to-day visual change percentage visibility across each domain in both the UI table and exported CSV spreadsheets, rather than broad aggregate summaries.
+
+## D17 — 60-Day Rolling JSON Retention Policy
+**Decision:** Retain daily JSON history snapshots for 60 calendar days (`cleanup_old_history(max_days=60)`).  
+**Why:** Allows weekly and 30-day monthly periodic reporting with a comfortable buffer, while bounding Docker volume disk growth. HTML report archives remain on a 5-day retention window.
+
+## D18 — Unified Reveal/Hide (`button-rh`) Accordion Model
+**Decision:** Standardize expandable header panels (`addDomainCard`, `scheduleCard`, `historyCard`, `periodicReportsCard`) under a unified `toggleRHCard()` accordion controller.  
+**Why:** Prevents multiple heavy control cards from remaining open concurrently, avoids cluttering the dashboard layout, and ensures the core live scan DOM hierarchy is never distorted.

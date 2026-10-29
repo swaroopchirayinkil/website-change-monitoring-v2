@@ -1,19 +1,19 @@
 # Project State
 
 **Branch:** `final-testing` (production-deployed branch)  
-**Last audited:** 2026-08-25
+**Last audited:** 2026-10-29
 
 ## Current Status
 The application is **functional and actively deployed** via Portainer/Docker.
 Core monitoring workflow (screenshot → diff → report) is stable.
-Outstanding issues are quality/security concerns, not functional regressions.
+Recent additions include structured 60-day daily JSON history persistence, on-demand periodic visual change reports (Weekly/Monthly/Custom) formatted as a day-by-day percentage change matrix, CSV/JSON report exports, and unified `button-rh` accordion card controls.
 
 ## Active Branches
 
 | Branch | Purpose |
 |---|---|
 | `main` | Stable merged release |
-| `final-testing` | Production branch (HEAD — includes Portainer volume fix) |
+| `final-testing` | Production branch (HEAD — includes Portainer volume fix & Periodic Reports) |
 | `portainer-test` | Same commit as `final-testing` |
 | `portainer-trim-memory` | Memory optimization experiments (remote only) |
 | `coolify-test` | Coolify deployment experiments (remote only) |
@@ -26,10 +26,9 @@ Outstanding issues are quality/security concerns, not functional regressions.
 **Root cause:** `get_thread_browser()` checks `hasattr(_thread_local, "playwright")` but never re-checks whether the stored browser is still alive. After `cleanup_all_browsers()` clears `_thread_browsers`, the thread-local attributes still exist, so subsequent scans get stale references.  
 **Impact:** Medium — silent errors in cleanup; potential for leaked Chromium processes over time.
 
-### B2 — Race Condition on `ScanManager.is_running` in Scheduler
-**File:** `monitor/scheduler.py` line 182  
-**Symptom:** `scan_manager.is_running` is read without acquiring `scan_manager.lock`.  
-**Impact:** Low — boolean read is atomic in CPython (GIL), but not formally thread-safe.
+### B2 — Race Condition on `ScanManager.is_running` in Scheduler [RESOLVED]
+**File:** `monitor/scheduler.py`  
+**Resolution:** Resolved — scheduler now acquires `scan_manager.lock` before reading `is_running`.
 
 ### B3 — Partial Report Write on Failure
 **File:** `monitor/server.py` — `generate_html_report()`  

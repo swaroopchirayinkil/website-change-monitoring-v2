@@ -111,19 +111,30 @@ If adding a new env var:
 1. Reads `monitor/web/index.html` as a template
 2. Calls `template.format(now_str=..., total=..., report_data_json=..., ...)` 
 3. Writes to `.visual_cache/report.html` (live) and `.visual_cache/report_YYYY-MM-DD.html` (daily archive)
-4. Calls `cleanup_old_reports(max_days=5)` — deletes archives older than 5 days
+4. Calls `record_daily_scan_data(results)` in `history_manager.py` to persist structured JSON to `.visual_cache/history/report_YYYY-MM-DD.json`
+5. Calls `cleanup_old_reports(max_days=5)` which purges HTML archives older than 5 days and runs `cleanup_old_history(max_days=60)` to prune JSON records older than 60 days
+
+## Periodic Reports & Historical Data Flow
+
+The periodic reports pipeline (`monitor/history_manager.py`) allows on-demand reporting across all monitored domains without re-running scans:
+- **`record_daily_scan_data(results, scan_date, timestamp)`**: Atomically writes daily scan metrics to `.visual_cache/history/report_YYYY-MM-DD.json`.
+- **`generate_periodic_report(period, start_date, end_date)`**: Loads daily JSON records across the selected period (`daily`, `weekly`, `monthly`, or `custom`) and builds an aligned day-by-day percentage matrix for each monitored domain.
+- **`export_report_csv(report_data)`**: Formats the report data into CSV text with `#`, `Target Domain / URL`, followed by each date column.
+- **`cleanup_old_history(max_days=60)`**: Automatically removes JSON files older than 60 days.
+- **`seed_history_from_existing_reports()`**: Scans pre-existing `report_YYYY-MM-DD.html` files and extracts `window.initialReportData` to backfill missing JSON history.
 
 ## Key Path Constants (from `monitor/config.py`)
 
 ```python
-BASE_DIR        = Path.cwd()
-CACHE_DIR       = BASE_DIR / ".visual_cache"
-BASELINES_DIR   = CACHE_DIR / "baselines"
-LATEST_DIR      = CACHE_DIR / "latest"
-DIFFS_DIR       = CACHE_DIR / "diffs"
-REPORT_FILE     = CACHE_DIR / "report.html"
+BASE_DIR            = Path.cwd()
+CACHE_DIR           = BASE_DIR / ".visual_cache"
+BASELINES_DIR       = CACHE_DIR / "baselines"
+LATEST_DIR          = CACHE_DIR / "latest"
+DIFFS_DIR           = CACHE_DIR / "diffs"
+HISTORY_DIR         = CACHE_DIR / "history"
+REPORT_FILE         = CACHE_DIR / "report.html"
 DEFAULT_DOMAIN_FILE = CACHE_DIR / "domain.txt"
-WEB_DIR         = Path(__file__).parent / "web"   # monitor/web/
+WEB_DIR             = Path(__file__).parent / "web"   # monitor/web/
 ```
 
 Always import from `monitor.config`. Never hardcode these paths.

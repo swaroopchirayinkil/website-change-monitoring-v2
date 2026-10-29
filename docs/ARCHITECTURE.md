@@ -24,6 +24,7 @@
 │  ─────────── FILESYSTEM (.visual_cache/) ─────────  │
 │  domain.txt  baselines/  latest/  diffs/            │
 │  report.html  report_DATE.html                      │
+│  history/ (report_DATE.json)                        │
 │  schedule_config.json  login_audit.log              │
 └─────────────────────────────────────────────────────┘
          ▲ HTTP (Cookie auth)
@@ -43,10 +44,11 @@
 | `scan_manager.py` | Scan state machine, `ThreadPoolExecutor`, `build_combined_report_results()` | Browser or image ops |
 | `screenshot_engine.py` | Playwright browser pool (thread-local), `capture_screenshot()` | Diff logic |
 | `diff_engine.py` | Pixel diff, heatmap PNG creation | Screenshot capture |
+| `history_manager.py` | Daily JSON snapshot persistence, periodic date matrix compilation, CSV export, 60-day retention | Scan orchestration |
 | `auth.py` | Sessions dict, `FAILED_ATTEMPTS` dict, hCaptcha API call, audit log file | HTTP response writing |
 | `scheduler.py` | Background daemon thread, `schedule_config.json` persistence | Scan logic (delegates to `scan_manager`) |
 | `domain_manager.py` | `domain.txt` CRUD, URL normalization, slug generation, cache file cleanup | Scan orchestration |
-| `retention_manager.py` | Daily report deletion (5-day window), audit log pruning (30-day), baseline timestamps | Scan or auth logic |
+| `retention_manager.py` | Daily HTML deletion (5-day window), audit log pruning (30-day), hooks JSON history pruning (60-day) | Scan or auth logic |
 
 ## Data Flow — Scan Lifecycle
 
@@ -86,6 +88,9 @@ generate_html_report()   ← renders index.html template → report.html + repor
 | POST | `/api/logout` | Public | `server.py:do_POST` |
 | GET | `/api/status` | Session | `server.py:do_GET` → `scan_manager.get_state()` |
 | GET | `/api/history` | Session | `server.py:do_GET` → `retention_manager.get_historical_reports()` |
+| GET | `/api/reports/history-dates` | Session | `server.py:do_GET` → `history_manager.get_available_history_dates()` |
+| GET | `/api/reports/generate` | Session | `server.py:do_GET` → `history_manager.generate_periodic_report()` |
+| GET | `/api/reports/export` | Session | `server.py:do_GET` → `history_manager.export_report_csv()` |
 | GET | `/api/login-logs` | Session | `server.py:do_GET` → `auth.get_login_audit_logs()` |
 | GET | `/api/schedule` | Session | `server.py:do_GET` → `scheduler_manager.get_status()` |
 | POST | `/api/schedule` | Session | `server.py:do_POST` → `scheduler_manager.save_config()` |
@@ -101,6 +106,8 @@ generate_html_report()   ← renders index.html template → report.html + repor
   domain.txt                 ← Monitored URL list (one per line, # for comments)
   report.html                ← Live dashboard (overwritten each scan)
   report_YYYY-MM-DD.html     ← Daily archive (5-day rolling, auto-deleted)
+  history/                   ← Structured daily JSON records (60-day rolling retention)
+    report_YYYY-MM-DD.json   ← Machine-readable daily scan results across all domains
   schedule_config.json       ← Scheduler settings (enabled, freq, hour, tz, last_run)
   login_audit.log            ← Login/logout audit trail (30-day rolling, auto-pruned)
   baselines/{slug}.png       ← Reference screenshots
@@ -124,6 +131,9 @@ Placeholders: `{now_str}`, `{total}`, `{changed}`, `{unchanged}`, `{failed}`, `{
 - `renderSummaryTable()` / `renderSnapshotBlocks()` — reads from `window.initialReportData` (injected at page bottom by template).
 - `checkServerStatus()` — polls `/api/status` every 3s; drives `isServerConnected` flag.
 - `startPolling()` / `updateProgressUI()` — 1s poll during active scan; reloads page on completion.
+- `toggleRHCard(targetId, callback)` — Accordion reveal/hide pattern for expandable panels (`addDomainCard`, `scheduleCard`, `historyCard`, `periodicReportsCard`), automatically closing other open cards to keep the UI clean.
+- `renderPeriodicReportTable(data)` — Dynamically renders day-by-day percentage matrix columns across Weekly, Monthly, or Custom periods.
+- `downloadPeriodicReport(format)` — Downloads periodic reports in CSV or JSON.
 - All domain/scan operations call REST API then either reload or start polling.
 
 ## Authentication Flow

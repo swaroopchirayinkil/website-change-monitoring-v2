@@ -46,6 +46,13 @@ def cleanup_old_reports(max_days: int = 5):
     # Also perform 30-day retention cleanup for login audit logs
     cleanup_old_login_logs(max_days=30)
 
+    # Maintain 60-day retention for daily JSON history records
+    try:
+        from monitor.history_manager import cleanup_old_history
+        cleanup_old_history(max_days=60)
+    except Exception:
+        pass
+
 
 def get_historical_reports() -> list[dict]:
     """Retrieve list of available historical daily reports in CACHE_DIR (within 5-day retention window)."""

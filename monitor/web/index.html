@@ -54,6 +54,9 @@
                 <button id="btn-toggle-history" class="btn-action btn-history button-rh" data-rh-target="historyCard" onclick="toggleHistoryCard()">
                     📜 View Historical Reports (Last 5 Days)
                 </button>
+                <button id="btn-toggle-periodic-reports" class="btn-action btn-periodic-reports button-rh" data-rh-target="periodicReportsCard" onclick="togglePeriodicReportsCard()">
+                    📊 Periodic Reports (Daily / Weekly / Monthly)
+                </button>
             </div>
         </div>
     </div>
@@ -177,6 +180,70 @@
         </div>
         <div id="historyGrid" class="history-grid">
             <!-- Dynamically populated -->
+        </div>
+    </div>
+
+    <!-- Periodic Reports Expandable Card -->
+    <div id="periodicReportsCard" class="periodic-reports-card hidden">
+        <div class="periodic-header">
+            <div>
+                <h3 style="display:flex; align-items:center; gap:0.5rem; color:#1c1917; font-size:1.15rem; font-weight:800;">
+                    📊 Periodic Visual Change Reports
+                </h3>
+                <p style="font-size:0.85rem; color:var(--text-muted); margin-top:0.25rem;">
+                    Generate aggregated visual mismatch reports on demand across all monitored domains using stored daily JSON records.
+                </p>
+            </div>
+            <button onclick="togglePeriodicReportsCard()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1.2rem;">✖</button>
+        </div>
+        <div class="periodic-body">
+            <div class="periodic-controls-bar">
+                <div class="preset-buttons-group">
+                    <span style="font-size:0.82rem; font-weight:700; color:var(--text-muted);">Reporting Period:</span>
+                    <button class="preset-chip" onclick="setPeriodicPreset('daily', this)">Daily (Today)</button>
+                    <button class="preset-chip active" onclick="setPeriodicPreset('weekly', this)">Weekly (Last 7 Days)</button>
+                    <button class="preset-chip" onclick="setPeriodicPreset('monthly', this)">Monthly (Last 30 Days)</button>
+                    <button class="preset-chip" onclick="setPeriodicPreset('custom', this)">Custom Range</button>
+                </div>
+                <div class="date-picker-group">
+                    <div class="date-input-wrap">
+                        <label for="reportStartDate">From:</label>
+                        <input type="date" id="reportStartDate" class="date-input" onchange="handleCustomDateChange()">
+                    </div>
+                    <div class="date-input-wrap">
+                        <label for="reportEndDate">To:</label>
+                        <input type="date" id="reportEndDate" class="date-input" onchange="handleCustomDateChange()">
+                    </div>
+                    <button id="btn-run-periodic-report" class="btn-action btn-periodic-run" onclick="generatePeriodicReport()">
+                        🔍 Generate Report
+                    </button>
+                    <div style="display:flex; gap:0.4rem; margin-left:auto;">
+                        <button id="btn-export-csv" class="btn-export" onclick="downloadPeriodicReport('csv')" title="Export report as CSV">
+                            📥 CSV
+                        </button>
+                        <button id="btn-export-json" class="btn-export" onclick="downloadPeriodicReport('json')" title="Export report as JSON">
+                            📥 JSON
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Periodic Report Info Bar -->
+            <div id="periodicReportInfoBar" class="periodic-info-bar">
+                <!-- Dynamically populated via app.js -->
+            </div>
+
+            <!-- Daily Change Percentage Matrix Table -->
+            <div class="table-responsive" style="margin-top:1.25rem; overflow-x: auto;">
+                <table class="summary-table daily-matrix-table">
+                    <thead id="periodicReportTableHeader">
+                        <!-- Dynamically populated with each date in the period -->
+                    </thead>
+                    <tbody id="periodicReportTableBody">
+                        <tr><td colspan="10" style="text-align:center; padding:1.5rem; color:var(--text-muted);">Select a period and click Generate Report.</td></tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 

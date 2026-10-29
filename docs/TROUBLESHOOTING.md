@@ -90,6 +90,25 @@
 
 ---
 
+## Periodic Reports & History Issues
+
+### No data displayed for earlier dates in Weekly / Monthly report
+**Symptom:** Several date columns in the table or CSV export show an em-dash (`—`).  
+**Cause:** Daily JSON records (`.visual_cache/history/report_YYYY-MM-DD.json`) only exist for calendar days when WebGlancer performed a scan. Days without an executed scan intentionally show `—` (no data).  
+**Auto-Backfill:** On server startup, `history_manager.py:seed_history_from_existing_reports()` automatically scans pre-existing `report_YYYY-MM-DD.html` archives in `.visual_cache/` and backfills corresponding JSON files.
+
+### History missing for dates older than 60 days
+**Cause:** Intended design. To prevent unbounded Docker volume growth, daily JSON snapshots are governed by a rolling 60-day retention policy (`cleanup_old_history(max_days=60)`). Records older than 60 days are automatically deleted.
+
+### Table overflows horizontally on Monthly (Last 30 Days) view
+**Behavior:** Expected. Rendering 30 individual calendar date columns creates a wide matrix. The table container is configured with `overflow-x: auto` so users can scroll horizontally across all 30 days while the `#` and `Target Domain / URL` columns remain visible.
+
+### CSV export download fails or returns unauthorized
+**Cause:** All `/api/reports/*` export endpoints require a valid session cookie.  
+**Fix:** Ensure you are logged in. If your session expired or the container restarted, re-login via `/login.html`.
+
+---
+
 ## Docker / Deployment Issues
 
 ### `domain.txt` is empty after redeployment

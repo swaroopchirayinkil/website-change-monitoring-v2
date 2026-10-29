@@ -12,6 +12,7 @@ CACHE_DIR = BASE_DIR / ".visual_cache"
 BASELINES_DIR = CACHE_DIR / "baselines"
 LATEST_DIR = CACHE_DIR / "latest"
 DIFFS_DIR = CACHE_DIR / "diffs"
+HISTORY_DIR = CACHE_DIR / "history"
 REPORT_FILE = CACHE_DIR / "report.html"
 DEFAULT_DOMAIN_FILE = CACHE_DIR / "domain.txt"
 
@@ -20,8 +21,8 @@ PACKAGE_DIR = Path(__file__).parent
 WEB_DIR = PACKAGE_DIR / "web"
 
 def ensure_dirs():
-    """Ensure baseline, latest, diffs, and cache directories exist."""
-    for d in [CACHE_DIR, BASELINES_DIR, LATEST_DIR, DIFFS_DIR]:
+    """Ensure baseline, latest, diffs, history, and cache directories exist."""
+    for d in [CACHE_DIR, BASELINES_DIR, LATEST_DIR, DIFFS_DIR, HISTORY_DIR]:
         d.mkdir(parents=True, exist_ok=True)
 
     # Initialize domain.txt inside persistent cache volume if missing

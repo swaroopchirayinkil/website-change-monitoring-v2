@@ -10,13 +10,30 @@ let currentSortDirection = 'asc';
 let currentStatusFilter = 'ALL';
 let currentReportData = [];
 
+const ALL_EXPANDABLE_CARDS = ['addDomainCard', 'scheduleCard', 'historyCard', 'periodicReportsCard'];
+
 function toggleRHCard(cardId, onShowCallback) {
-    const card = typeof cardId === 'string' ? document.getElementById(cardId) : cardId;
-    if (card) {
-        card.classList.toggle('hidden');
-        if (!card.classList.contains('hidden') && typeof onShowCallback === 'function') {
+    const targetCard = typeof cardId === 'string' ? document.getElementById(cardId) : cardId;
+    if (!targetCard) return;
+
+    const willOpen = targetCard.classList.contains('hidden');
+
+    // Close all other expandable cards so each view is cleanly separated
+    ALL_EXPANDABLE_CARDS.forEach(id => {
+        const c = document.getElementById(id);
+        if (c && c !== targetCard) {
+            c.classList.add('hidden');
+        }
+    });
+
+    if (willOpen) {
+        targetCard.classList.remove('hidden');
+        if (typeof onShowCallback === 'function') {
             onShowCallback();
         }
+        targetCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } else {
+        targetCard.classList.add('hidden');
     }
 }
 
@@ -652,6 +669,218 @@ async function handleLogout() {
     window.location.href = '/login.html';
 }
 
+// Periodic Reports Controller (Daily / Weekly / Monthly / Custom)
+let currentPeriodicPreset = 'weekly';
+let currentPeriodicReportData = null;
+
+function togglePeriodicReportsCard() {
+    toggleRHCard('periodicReportsCard', onPeriodicReportsShow);
+}
+
+function onPeriodicReportsShow() {
+    initPeriodicDates();
+    generatePeriodicReport();
+}
+
+function formatDateISO(d) {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function initPeriodicDates() {
+    const startInput = document.getElementById('reportStartDate');
+    const endInput = document.getElementById('reportEndDate');
+    if (!startInput || !endInput) return;
+
+    if (!startInput.value || !endInput.value) {
+        setPeriodicPreset('weekly');
+    }
+}
+
+function setPeriodicPreset(preset, btnEl) {
+    currentPeriodicPreset = preset;
+    document.querySelectorAll('.preset-chip').forEach(c => c.classList.remove('active'));
+    if (btnEl) {
+        btnEl.classList.add('active');
+    } else {
+        const chips = document.querySelectorAll('.preset-chip');
+        chips.forEach(c => {
+            if (c.innerText.toLowerCase().includes(preset)) c.classList.add('active');
+        });
+    }
+
+    const today = new Date();
+    const startInput = document.getElementById('reportStartDate');
+    const endInput = document.getElementById('reportEndDate');
+    if (!startInput || !endInput) return;
+
+    if (preset === 'daily') {
+        startInput.value = formatDateISO(today);
+        endInput.value = formatDateISO(today);
+    } else if (preset === 'weekly') {
+        const past = new Date();
+        past.setDate(today.getDate() - 6);
+        startInput.value = formatDateISO(past);
+        endInput.value = formatDateISO(today);
+    } else if (preset === 'monthly') {
+        const past = new Date();
+        past.setDate(today.getDate() - 29);
+        startInput.value = formatDateISO(past);
+        endInput.value = formatDateISO(today);
+    }
+
+    if (btnEl) {
+        generatePeriodicReport();
+    }
+}
+
+function handleCustomDateChange() {
+    currentPeriodicPreset = 'custom';
+    document.querySelectorAll('.preset-chip').forEach(c => c.classList.remove('active'));
+    const chips = document.querySelectorAll('.preset-chip');
+    chips.forEach(c => {
+        if (c.innerText.toLowerCase().includes('custom')) c.classList.add('active');
+    });
+}
+
+async function generatePeriodicReport() {
+    if (!isServerConnected) {
+        alert("The backend web server is not currently running.\n\nPlease start the server to generate periodic reports:\n\npython visual_change_detector.py serve");
+        return;
+    }
+
+    const startInput = document.getElementById('reportStartDate');
+    const endInput = document.getElementById('reportEndDate');
+    const tbody = document.getElementById('periodicReportTableBody');
+    const kpiGrid = document.getElementById('periodicKpiCards');
+    const runBtn = document.getElementById('btn-run-periodic-report');
+
+    const startVal = startInput?.value || '';
+    const endVal = endInput?.value || '';
+
+    if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:2rem; color:var(--text-muted);"><span class="spinner" style="border-top-color:#0284c7; width:20px; height:20px; display:inline-block; vertical-align:middle; margin-right:8px;"></span> Loading historical report data across all domains...</td></tr>';
+    }
+    if (runBtn) runBtn.disabled = true;
+
+    try {
+        const url = `/api/reports/generate?period=${encodeURIComponent(currentPeriodicPreset)}&start_date=${encodeURIComponent(startVal)}&end_date=${encodeURIComponent(endVal)}`;
+        const resp = await fetch(url);
+        if (!resp.ok) {
+            if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:1.5rem; color:#dc2626; font-weight:700;">⚠️ Failed to generate periodic report from server.</td></tr>';
+            return;
+        }
+
+        const data = await resp.json();
+        currentPeriodicReportData = data;
+        renderPeriodicReportInfoBar(data);
+        renderPeriodicReportTable(data);
+    } catch (e) {
+        if (tbody) tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:1.5rem; color:#dc2626; font-weight:700;">⚠️ Error communicating with server: ${e.message}</td></tr>`;
+    } finally {
+        if (runBtn) runBtn.disabled = false;
+    }
+}
+
+function formatShortDate(dateStr) {
+    if (!dateStr) return '';
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const mIdx = parseInt(parts[1], 10) - 1;
+        return `${parts[2]}-${monthNames[mIdx] || parts[1]}`;
+    }
+    return dateStr;
+}
+
+function renderPeriodicReportInfoBar(data) {
+    const infoBar = document.getElementById('periodicReportInfoBar');
+    if (!infoBar) return;
+
+    infoBar.innerHTML = `
+        <div class="info-badge"><strong>Reporting Period:</strong> ${data.start_date} to ${data.end_date} (${data.total_days} days)</div>
+        <div class="info-badge"><strong>Monitored Domains:</strong> ${data.total_domains}</div>
+        <div class="info-badge"><strong>Dates with Data:</strong> ${data.dates_with_data_count} / ${data.total_days} days</div>
+        <div class="info-badge"><strong>Retention:</strong> Rolling 60 Days JSON</div>
+    `;
+}
+
+function renderPeriodicReportTable(data) {
+    const thead = document.getElementById('periodicReportTableHeader');
+    const tbody = document.getElementById('periodicReportTableBody');
+    if (!tbody) return;
+
+    const dates = data.dates_in_period || [];
+    const items = data.domain_matrix || [];
+
+    // Dynamically render header with #, Target Domain / URL, followed by each Date column
+    if (thead) {
+        thead.innerHTML = `
+            <tr>
+                <th style="width: 50px; text-align: center;">#</th>
+                <th style="min-width: 250px;">Target Domain / URL</th>
+                ${dates.map(d => `<th style="text-align: center; min-width: 90px;" title="${d}">${formatShortDate(d)}</th>`).join('')}
+            </tr>
+        `;
+    }
+
+    if (items.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="${dates.length + 2}" style="text-align:center; padding:1.5rem; color:var(--text-muted);">No domains found in monitoring list.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = items.map(item => {
+        const timelineMap = {};
+        (item.timeline || []).forEach(t => {
+            timelineMap[t.date] = t;
+        });
+
+        const dailyCells = dates.map(d => {
+            const t = timelineMap[d];
+            if (t && t.has_data) {
+                if (t.status === 'Failed') {
+                    return `<td style="text-align:center;"><span class="matrix-pct-failed" title="${d}: Scan Failed">Failed</span></td>`;
+                }
+                const pct = typeof t.percentage === 'number' ? t.percentage : 0;
+                const px = t.changed_pixels ? t.changed_pixels.toLocaleString() : '0';
+                if (pct > 0.1 || t.status === 'Changed') {
+                    return `<td style="text-align:center;"><span class="matrix-pct-changed" title="${d}: ${pct.toFixed(2)}% changed (${px} px)">${pct.toFixed(2)}%</span></td>`;
+                } else {
+                    return `<td style="text-align:center;"><span class="matrix-pct-unchanged" title="${d}: 0.00% (Unchanged)">0.00%</span></td>`;
+                }
+            } else {
+                return `<td style="text-align:center; color:#94a3b8;" title="${d}: No scan data for this date">—</td>`;
+            }
+        }).join('');
+
+        return `
+            <tr>
+                <td style="color:var(--text-muted); font-weight:700; text-align:center;">#${item.index}</td>
+                <td style="font-weight:700;">
+                    <a href="${item.url}" target="_blank" style="color:var(--text-primary); text-decoration:none;">${item.url}</a>
+                    ${item.baseline_last_updated ? `<div style="font-size:0.75rem; color:var(--text-muted); font-weight:500;">Baseline: ${item.baseline_last_updated}</div>` : ''}
+                </td>
+                ${dailyCells}
+            </tr>
+        `;
+    }).join('');
+}
+
+function downloadPeriodicReport(format) {
+    if (!isServerConnected) {
+        alert("The backend web server is not running.");
+        return;
+    }
+    const startInput = document.getElementById('reportStartDate');
+    const endInput = document.getElementById('reportEndDate');
+    const s = startInput?.value || '';
+    const e = endInput?.value || '';
+    const url = `/api/reports/export?format=${encodeURIComponent(format)}&period=${encodeURIComponent(currentPeriodicPreset)}&start_date=${encodeURIComponent(s)}&end_date=${encodeURIComponent(e)}`;
+    window.open(url, '_blank');
+}
+
 // Initialization on DOM Content Loaded
 document.addEventListener('DOMContentLoaded', () => {
     checkServerStatus();
@@ -667,3 +896,4 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 });
+
