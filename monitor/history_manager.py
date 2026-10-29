@@ -356,22 +356,34 @@ def generate_periodic_report(period: str = "weekly", start_date: str = None, end
 
 
 def export_report_csv(report_data: dict) -> str:
-    """Generate CSV text for a periodic report formatted as a daily percentage matrix."""
+    """Generate CSV text for a periodic report formatted as a daily percentage matrix matching the frontend."""
     output = io.StringIO()
     writer = csv.writer(output)
 
     dates = report_data.get("dates_in_period", [])
-    header = ["#", "Target Domain / URL"] + dates
+    # Format date headers as DD-MON uppercase (e.g., 23-OCT, 24-OCT) matching the frontend screenshot
+    formatted_date_headers = []
+    for d in dates:
+        try:
+            dt = datetime.strptime(d, "%Y-%m-%d")
+            formatted_date_headers.append(dt.strftime("%d-%b").upper())
+        except Exception:
+            formatted_date_headers.append(d)
+
+    header = ["#", "TARGET DOMAIN / URL"] + formatted_date_headers
     writer.writerow(header)
 
     for item in report_data.get("domain_matrix", []):
-        row = [item.get("index", ""), item.get("url", "")]
+        row = [f"#{item.get('index', '')}", item.get("url", "")]
         timeline_by_date = {t.get("date"): t for t in item.get("timeline", [])}
         for d in dates:
             t = timeline_by_date.get(d)
             if t and t.get("has_data"):
-                pct = t.get("percentage")
-                row.append(f"{pct:.2f}%" if pct is not None else "N/A")
+                if t.get("status") == "Failed":
+                    row.append("Failed")
+                else:
+                    pct = t.get("percentage")
+                    row.append(f"{pct:.2f}%" if pct is not None else "0.00%")
             else:
                 row.append("—")
         writer.writerow(row)

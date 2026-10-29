@@ -869,16 +869,73 @@ function renderPeriodicReportTable(data) {
 }
 
 function downloadPeriodicReport(format) {
-    if (!isServerConnected) {
-        alert("The backend web server is not running.");
+    if (!currentPeriodicReportData || !currentPeriodicReportData.domain_matrix) {
+        if (!isServerConnected) {
+            alert("The backend web server is not running.");
+            return;
+        }
+        const startInput = document.getElementById('reportStartDate');
+        const endInput = document.getElementById('reportEndDate');
+        const s = startInput?.value || '';
+        const e = endInput?.value || '';
+        const url = `/api/reports/export?format=${encodeURIComponent(format)}&period=${encodeURIComponent(currentPeriodicPreset)}&start_date=${encodeURIComponent(s)}&end_date=${encodeURIComponent(e)}`;
+        window.open(url, '_blank');
         return;
     }
-    const startInput = document.getElementById('reportStartDate');
-    const endInput = document.getElementById('reportEndDate');
-    const s = startInput?.value || '';
-    const e = endInput?.value || '';
-    const url = `/api/reports/export?format=${encodeURIComponent(format)}&period=${encodeURIComponent(currentPeriodicPreset)}&start_date=${encodeURIComponent(s)}&end_date=${encodeURIComponent(e)}`;
-    window.open(url, '_blank');
+
+    const data = currentPeriodicReportData;
+    const period = currentPeriodicPreset || 'report';
+    const filename = `webglancer_report_${period}_${data.start_date}_to_${data.end_date}.${format}`;
+
+    if (format === 'csv') {
+        const dates = data.dates_in_period || [];
+        const dateHeaders = dates.map(d => formatShortDate(d).toUpperCase());
+        const headers = ["#", "TARGET DOMAIN / URL", ...dateHeaders];
+
+        const rows = [headers.map(h => `"${h.replace(/"/g, '""')}"`).join(',')];
+
+        (data.domain_matrix || []).forEach(item => {
+            const timelineMap = {};
+            (item.timeline || []).forEach(t => { timelineMap[t.date] = t; });
+
+            const dailyValues = dates.map(d => {
+                const t = timelineMap[d];
+                if (t && t.has_data) {
+                    if (t.status === 'Failed') return "Failed";
+                    const pct = typeof t.percentage === 'number' ? t.percentage : 0;
+                    return `${pct.toFixed(2)}%`;
+                }
+                return "—";
+            });
+
+            const rowData = [
+                `"#${item.index}"`,
+                `"${(item.url || '').replace(/"/g, '""')}"`,
+                ...dailyValues.map(v => `"${v}"`)
+            ];
+            rows.push(rowData.join(','));
+        });
+
+        const csvContent = "\uFEFF" + rows.join('\r\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+    } else {
+        const jsonContent = JSON.stringify(data, null, 2);
+        const blob = new Blob([jsonContent], { type: 'application/json;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+    }
 }
 
 // Initialization on DOM Content Loaded
