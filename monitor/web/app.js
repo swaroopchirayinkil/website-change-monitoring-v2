@@ -540,6 +540,15 @@ function renderSummaryTable() {
     const tbody = document.getElementById('summaryTableBody');
     if (!tbody) return;
 
+    // Compute top 3 domains by highest changed pixels globally (only changed domains with > 0 changed pixels)
+    const top3PixelUrls = new Set(
+        (window.initialReportData || [])
+            .filter(item => item.status === 'Changed' && (Number(item.changed_pixels) || 0) > 0)
+            .sort((a, b) => (Number(b.changed_pixels) || 0) - (Number(a.changed_pixels) || 0))
+            .slice(0, 3)
+            .map(item => item.url)
+    );
+
     let items = [...window.initialReportData];
 
     if (currentStatusFilter !== 'ALL') {
@@ -579,10 +588,23 @@ function renderSummaryTable() {
         const pxDisplay = item.status === 'Failed' ? 'N/A' : Number(item.changed_pixels || 0).toLocaleString();
         const safeUrl = (item.url || '').replace(/'/g, "\\'");
 
+        const isHighMismatch = (Number(item.percentage) || 0) > 50.0 && item.status !== 'Failed';
+        const isTop3Pixels = top3PixelUrls.has(item.url);
+        const shouldHighlight = isHighMismatch || isTop3Pixels;
+        const hlClass = shouldHighlight ? ' domain-hl-red' : '';
+        let hlTitle = '';
+        if (isHighMismatch && isTop3Pixels) {
+            hlTitle = 'Visual mismatch > 50% & Top 3 changed pixels';
+        } else if (isHighMismatch) {
+            hlTitle = 'Visual mismatch > 50%';
+        } else if (isTop3Pixels) {
+            hlTitle = 'Top 3 by changed pixels';
+        }
+
         return `
             <tr>
                 <td style="color:var(--text-muted); font-weight:700;">#${item._originalIndex}</td>
-                <td style="font-weight:700;"><a href="${item.url}" target="_blank" style="color:var(--text-primary); text-decoration:none;">${item.url}</a></td>
+                <td style="font-weight:700;"><a href="${item.url}" target="_blank" class="domain-link${hlClass}" ${hlTitle ? `title="${hlTitle}"` : ''}>${item.url}</a></td>
                 <td><span class="badge badge-${stClass}">${item.status}</span></td>
                 <td style="font-weight:800; color:${item.percentage > 0 ? 'var(--accent-changed)' : 'var(--text-primary)'};">${pctDisplay}</td>
                 <td style="color:var(--text-muted); font-weight:600;">${pxDisplay}</td>
@@ -604,18 +626,40 @@ function renderSnapshotBlocks() {
     const app = document.getElementById('app');
     if (!app || !window.initialReportData) return;
 
+    // Compute top 3 domains by highest changed pixels globally
+    const top3PixelUrls = new Set(
+        (window.initialReportData || [])
+            .filter(item => item.status === 'Changed' && (Number(item.changed_pixels) || 0) > 0)
+            .sort((a, b) => (Number(b.changed_pixels) || 0) - (Number(a.changed_pixels) || 0))
+            .slice(0, 3)
+            .map(item => item.url)
+    );
+
     app.innerHTML = window.initialReportData.map(item => {
         const stClass = (item.status || '').toLowerCase();
         const pctDisplay = item.status === 'Failed' ? 'N/A' : `${Number(item.percentage || 0).toFixed(2)}%`;
         const pxDisplay = item.status === 'Failed' ? 'N/A' : Number(item.changed_pixels || 0).toLocaleString();
         const safeUrl = (item.url || '').replace(/'/g, "\\'");
 
+        const isHighMismatch = (Number(item.percentage) || 0) > 50.0 && item.status !== 'Failed';
+        const isTop3Pixels = top3PixelUrls.has(item.url);
+        const shouldHighlight = isHighMismatch || isTop3Pixels;
+        const hlClass = shouldHighlight ? ' domain-hl-red' : '';
+        let hlTitle = '';
+        if (isHighMismatch && isTop3Pixels) {
+            hlTitle = 'Visual mismatch > 50% & Top 3 changed pixels';
+        } else if (isHighMismatch) {
+            hlTitle = 'Visual mismatch > 50%';
+        } else if (isTop3Pixels) {
+            hlTitle = 'Top 3 by changed pixels';
+        }
+
         return `
             <div id="block-${item._slug}" class="url-block">
                 <div class="url-header">
                     <div class="url-title-wrapper">
                         <span class="badge badge-${stClass}">${item.status}</span>
-                        <a href="${item.url}" target="_blank" style="font-size:1.1rem; font-weight:800; color:#1c1917; text-decoration:none;">${item.url}</a>
+                        <a href="${item.url}" target="_blank" class="domain-link${hlClass}" style="font-size:1.1rem; font-weight:800; text-decoration:none;" ${hlTitle ? `title="${hlTitle}"` : ''}>${item.url}</a>
                         <span style="font-size:0.85rem; color:var(--text-muted);">| Diff: <strong style="color:#1c1917;">${pctDisplay}</strong> (${pxDisplay} px changed)</span>
                         ${item.baseline_last_updated ? `<span style="font-size:0.8rem; color:#6b21a8; background:#e9d5ff; padding:0.2rem 0.6rem; border-radius:12px; border:1px solid #c084fc; font-weight:700;">🗓️ Baseline: ${item.baseline_last_updated}</span>` : ''}
                     </div>

@@ -180,6 +180,35 @@ body {
     background: #faf8f5;
 }
 
+/* Domain name link and red highlight styling */
+.domain-link {
+    color: var(--text-primary);
+    text-decoration: none;
+    display: inline-block;
+    padding: 3px 6px;
+    border-radius: 6px;
+    border: 1.5px solid transparent;
+    transition: all 0.2s ease;
+}
+
+.domain-link:hover {
+    text-decoration: underline;
+}
+
+.domain-link.domain-hl-red {
+    background-color: #fef2f2;
+    border: 1.5px solid #f87171;
+    color: #991b1b !important;
+    font-weight: 800;
+    box-shadow: 0 1px 3px rgba(239, 68, 68, 0.15);
+}
+
+.domain-link.domain-hl-red:hover {
+    background-color: #fee2e2;
+    border-color: #ef4444;
+    text-decoration: none;
+}
+
 .url-block {
     background: var(--bg-card);
     border: 1px solid var(--border-color);
